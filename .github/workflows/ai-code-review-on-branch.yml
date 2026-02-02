@@ -1,6 +1,12 @@
 name: 🤖 AI Code Review - Nouvelle Branche
 
 on:
+  # Se déclenche sur les Pull Requests
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**.java'
+
   # Se déclenche à la création d'une branche
   create:
 
@@ -16,8 +22,8 @@ on:
 
 jobs:
   ai-code-review:
-    # Ne s'exécute que si c'est une branche (pas un tag)
-    if: github.ref_type == 'branch' || github.event_name == 'push'
+    # Ne s'exécute que si c'est une branche (pas un tag) ou une PR
+    if: github.ref_type == 'branch' || github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -46,14 +52,19 @@ jobs:
       - name: 🔍 Identifier les fichiers Java modifiés
         id: changed-files
         run: |
-          # Pour une nouvelle branche ou push, comparer avec main
-          BASE_BRANCH="main"
-
-          if git show-ref --verify --quiet refs/remotes/origin/$BASE_BRANCH; then
-            git diff --name-only origin/$BASE_BRANCH...${{ github.sha }} | grep '\.java$' > changed_files.txt || true
+          # Gérer différemment selon le type d'événement
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            # Pour une PR, comparer avec la branche de base
+            git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | grep '\.java$' > changed_files.txt || true
           else
-            # Si main n'existe pas, prendre tous les fichiers Java
-            find . -name "*.java" -not -path "*/target/*" -not -path "*/.git/*" > changed_files.txt || true
+            # Pour un push ou création de branche, comparer avec main
+            BASE_BRANCH="main"
+            if git show-ref --verify --quiet refs/remotes/origin/$BASE_BRANCH; then
+              git diff --name-only origin/$BASE_BRANCH...${{ github.sha }} | grep '\.java$' > changed_files.txt || true
+            else
+              # Si main n'existe pas, prendre tous les fichiers Java
+              find . -name "*.java" -not -path "*/target/*" -not -path "*/.git/*" > changed_files.txt || true
+            fi
           fi
 
           if [ -s changed_files.txt ]; then
@@ -126,6 +137,136 @@ jobs:
             review_report.json
             review_report.md
           retention-days: 30
+
+      - name: 🔍 Trouver la Pull Request associée
+        if: steps.changed-files.outputs.found == 'true'
+        id: find-pr
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // Si c'est un événement pull_request, on a directement le numéro
+            if (context.eventName === 'pull_request') {
+              core.setOutput('pr-number', context.issue.number);
+              core.setOutput('has-pr', 'true');
+              console.log(`✅ PR #${context.issue.number}`);
+              return;
+            }
+
+            // Sinon, chercher une PR ouverte pour cette branche
+            const branch = context.ref.replace('refs/heads/', '');
+            const { data: pulls } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${branch}`,
+              state: 'open'
+            });
+
+            if (pulls.length > 0) {
+              core.setOutput('pr-number', pulls[0].number);
+              core.setOutput('has-pr', 'true');
+              console.log(`✅ PR trouvée: #${pulls[0].number}`);
+            } else {
+              core.setOutput('has-pr', 'false');
+              console.log('ℹ️ Aucune PR ouverte pour cette branche');
+            }
+
+      - name: 💬 Créer un Review avec commentaires sur les lignes
+        if: steps.changed-files.outputs.found == 'true' && steps.find-pr.outputs.has-pr == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            // Lire le rapport JSON
+            const files = fs.readdirSync('.');
+            const jsonFile = files.find(f => f.startsWith('code_review_') && f.endsWith('.json'));
+
+            if (!jsonFile || !fs.existsSync(jsonFile)) {
+              console.log('⚠️ Aucun rapport JSON trouvé');
+              return;
+            }
+
+            const reviewData = JSON.parse(fs.readFileSync(jsonFile, 'utf8'));
+            const comments = [];
+            let summaryBody = '## 🤖 Revue de Code IA - Résumé\n\n';
+
+            // Icônes pour les sévérités
+            const severityIcons = {
+              'critical': '🔴',
+              'high': '🟠',
+              'medium': '🟡',
+              'low': '🔵',
+              'info': 'ℹ️'
+            };
+
+            // Construire les commentaires sur les lignes
+            for (const fileReview of reviewData.files || []) {
+              const filePath = fileReview.path;
+              summaryBody += `\n### 📄 ${filePath}\n`;
+              summaryBody += `**Score**: ${fileReview.score || 'N/A'}/10\n\n`;
+
+              let fileHasIssues = false;
+
+              for (const issue of fileReview.issues || []) {
+                if (issue.line) {
+                  fileHasIssues = true;
+                  const icon = severityIcons[issue.severity] || '•';
+                  const commentBody = `${icon} **${issue.severity?.toUpperCase() || 'INFO'}** - ${issue.title || 'Problème détecté'}\n\n${issue.description || ''}\n\n${issue.suggestion ? `💡 **Suggestion**: ${issue.suggestion}` : ''}`;
+
+                  comments.push({
+                    path: filePath,
+                    line: issue.line,
+                    side: 'RIGHT',
+                    body: commentBody
+                  });
+                }
+              }
+
+              if (!fileHasIssues && fileReview.issues?.length === 0) {
+                summaryBody += '✅ Aucun problème détecté\n\n';
+              }
+            }
+
+            // Ajouter le résumé global
+            if (reviewData.summary) {
+              summaryBody += `\n## 📊 Résumé Global\n\n${reviewData.summary}\n\n`;
+            }
+            if (reviewData.overall_score) {
+              summaryBody += `**Score Global**: ${reviewData.overall_score}/100\n\n`;
+            }
+
+            summaryBody += '\n---\n';
+            summaryBody += `🔍 Commit: \`${context.sha.substring(0, 7)}\`\n`;
+            summaryBody += `⏰ Analysé le: ${new Date().toLocaleString('fr-FR')}\n`;
+            summaryBody += `🤖 Propulsé par Claude Sonnet 4.5`;
+
+            // Créer le review avec commentaires
+            console.log(`📝 Création du review avec ${comments.length} commentaires`);
+
+            try {
+              await github.rest.pulls.createReview({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: ${{ steps.find-pr.outputs.pr-number }},
+                event: 'COMMENT',
+                body: summaryBody,
+                comments: comments
+              });
+              console.log('✅ Review créé avec succès');
+            } catch (error) {
+              console.log('⚠️ Erreur lors de la création du review avec commentaires:', error.message);
+              console.log('📝 Posting du résumé uniquement en commentaire');
+
+              // Si les commentaires inline échouent, poster uniquement le résumé
+              await github.rest.issues.createComment({
+                issue_number: ${{ steps.find-pr.outputs.pr-number }},
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: summaryBody
+              });
+            }
 
       - name: ✅ Résumé de l'analyse
         if: always()
