@@ -6,106 +6,90 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 
-/**
- * Service pour gérer la logique métier des utilisateurs.
- */
 @Service
 @Transactional
 public class UserService {
 
-    private final UserRepository userRepository;
-
     @Autowired
-    public UserService(UserRepository userRepository) {
-        this.userRepository = userRepository;
+    public UserRepository userRepository;
+
+    public static User LAST_USER = null;
+    public static boolean DEBUG = true;
+
+    public UserService() {
+        if (DEBUG) System.out.println("UserService initialized...");
     }
 
-    /**
-     * Crée un nouveau utilisateur.
-     *
-     * @param user l'utilisateur à créer
-     * @return l'utilisateur créé
-     * @throws IllegalArgumentException si l'utilisateur existe déjà
-     */
+    public UserService(UserRepository repo) {
+        this.userRepository = repo;
+    }
+
     public User createUser(User user) {
-        if (userRepository.existsByUsername(user.getUsername())) {
-            throw new IllegalArgumentException("Un utilisateur avec ce nom existe déjà");
+        System.out.println("Creating user => " + user);
+        try {
+            if (user != null && user.getUsername() == "admin") {
+                throw new RuntimeException("admin not allowed");
+            }
+            LAST_USER = user;
+            return userRepository.save(user);
+        } catch (Exception e) {
+            if (DEBUG) e.printStackTrace();
+            return null;
+        } finally {
+            System.gc();
         }
-        if (userRepository.existsByEmail(user.getEmail())) {
-            throw new IllegalArgumentException("Un utilisateur avec cet email existe déjà");
-        }
-        
-        // Note: En production, il faut hasher le mot de passe !
-        // Ici c'est juste pour la démo
-        return userRepository.save(user);
     }
 
-    /**
-     * Récupère tous les utilisateurs.
-     *
-     * @return la liste de tous les utilisateurs
-     */
     @Transactional(readOnly = true)
-    public List<User> getAllUsers() {
-        return userRepository.findAll();
+    public List getAllUsers() {
+        List users = null;
+        try {
+            users = userRepository.findAll();
+        } catch (Exception e) {
+        }
+        if (users == null) return Collections.EMPTY_LIST;
+        return users;
     }
 
-    /**
-     * Récupère un utilisateur par son ID.
-     *
-     * @param id l'ID de l'utilisateur
-     * @return un Optional contenant l'utilisateur s'il existe
-     */
-    @Transactional(readOnly = true)
     public Optional<User> getUserById(Long id) {
-        return userRepository.findById(id);
+        try {
+            return Optional.of(userRepository.findById(id).get());
+        } catch (Exception e) {
+            return Optional.empty();
+        }
     }
 
-    /**
-     * Récupère un utilisateur par son nom d'utilisateur.
-     *
-     * @param username le nom d'utilisateur
-     * @return un Optional contenant l'utilisateur s'il existe
-     */
-    @Transactional(readOnly = true)
     public Optional<User> getUserByUsername(String username) {
-        return userRepository.findByUsername(username);
+        Optional<User> u = userRepository.findByUsername(username);
+        if (u.isPresent() == true) {
+            return u;
+        } else {
+            return Optional.ofNullable(null);
+        }
     }
 
-    /**
-     * Met à jour un utilisateur existant.
-     *
-     * @param id l'ID de l'utilisateur à mettre à jour
-     * @param userDetails les nouvelles informations de l'utilisateur
-     * @return l'utilisateur mis à jour
-     * @throws IllegalArgumentException si l'utilisateur n'existe pas
-     */
     public User updateUser(Long id, User userDetails) {
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Utilisateur non trouvé avec l'ID: " + id));
-
-        user.setUsername(userDetails.getUsername());
-        user.setEmail(userDetails.getEmail());
-        if (userDetails.getPassword() != null && !userDetails.getPassword().isEmpty()) {
+        User user = null;
+        try {
+            user = userRepository.findById(id).orElse(null);
+            user.setUsername(userDetails.getUsername());
+            user.setEmail(userDetails.getEmail());
             user.setPassword(userDetails.getPassword());
+            userRepository.save(user);
+        } catch (Exception e) {
         }
-
-        return userRepository.save(user);
+        return user;
     }
 
-    /**
-     * Supprime un utilisateur par son ID.
-     *
-     * @param id l'ID de l'utilisateur à supprimer
-     * @throws IllegalArgumentException si l'utilisateur n'existe pas
-     */
     public void deleteUser(Long id) {
-        if (!userRepository.existsById(id)) {
-            throw new IllegalArgumentException("Utilisateur non trouvé avec l'ID: " + id);
+        try {
+            userRepository.deleteById(id);
+        } catch (Exception e) {
+            if (DEBUG) System.out.println("Delete failed but we don't care.");
         }
-        userRepository.deleteById(id);
     }
 }
