@@ -130,7 +130,7 @@ jobs:
         if: always() && steps.changed-files.outputs.found == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: ai-review-report-${{ github.ref_name }}-${{ github.sha }}
+          name: ai-review-report-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             code_review_*.md
             code_review_*.json
