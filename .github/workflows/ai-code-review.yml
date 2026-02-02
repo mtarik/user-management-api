@@ -1,0 +1,178 @@
+name: 🤖 AI Code Review - Java
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**.java'
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+      - 'feat/**'
+      - 'hotfix/**'
+    paths:
+      - '**.java'
+  
+  # Permettre le déclenchement manuel
+  workflow_dispatch:
+
+jobs:
+  ai-code-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Cache Maven packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: ☕ Compilation du projet Java
+        if: steps.changed-files.outputs.found == 'true'
+        run: |
+          if [ -f "pom.xml" ]; then
+            echo "🔨 Compilation avec Maven..."
+            mvn clean compile -B -q || echo "⚠️ Avertissement: Erreur de compilation"
+          elif [ -f "build.gradle" ]; then
+            echo "🔨 Compilation avec Gradle..."
+            ./gradlew compileJava -q || echo "⚠️ Avertissement: Erreur de compilation"
+          else
+            echo "ℹ️ Aucun système de build détecté"
+          fi
+        continue-on-error: true
+
+      - name: 🔍 Analyse statique (Checkstyle, PMD)
+        if: steps.changed-files.outputs.found == 'true'
+        run: |
+          if [ -f "pom.xml" ]; then
+            echo "📋 Exécution de Checkstyle..."
+            mvn checkstyle:check || echo "⚠️ Problèmes Checkstyle détectés"
+            echo "🔍 Exécution de PMD..."
+            mvn pmd:check || echo "⚠️ Problèmes PMD détectés"
+          fi
+        continue-on-error: true
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 📦 Installer les dépendances Python
+        run: |
+          pip install -r scripts/requirements.txt
+
+      - name: 🔍 Identifier les fichiers Java modifiés
+        id: changed-files
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | grep '\.java$' > changed_files.txt || true
+          else
+            git diff --name-only HEAD~1 HEAD | grep '\.java$' > changed_files.txt || true
+          fi
+          
+          if [ -s changed_files.txt ]; then
+            echo "found=true" >> $GITHUB_OUTPUT
+            echo "📝 Fichiers Java modifiés :"
+            cat changed_files.txt
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+            echo "❌ Aucun fichier Java modifié"
+          fi
+
+      - name: 🤖 Analyse IA avec Claude
+        if: steps.changed-files.outputs.found == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO_NAME: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          echo "🧠 Lancement de l'analyse IA..."
+          python scripts/ai_code_reviewer.py
+
+      - name: 📊 Upload du rapport d'analyse
+        if: always() && steps.changed-files.outputs.found == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-review-report-${{ github.sha }}
+          path: |
+            code_review_*.md
+            code_review_*.json
+            review_report.json
+            review_report.md
+          retention-days: 30
+      
+      - name: 💬 Commenter la Pull Request
+        if: github.event_name == 'pull_request' && steps.changed-files.outputs.found == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            
+            // Lire le rapport Markdown
+            let reportContent = '## 🤖 Revue de Code IA - Résultats\n\n';
+            
+            // Chercher les fichiers de rapport
+            const files = fs.readdirSync('.');
+            const mdFile = files.find(f => f.startsWith('code_review_') && f.endsWith('.md'));
+            
+            if (mdFile && fs.existsSync(mdFile)) {
+              reportContent += fs.readFileSync(mdFile, 'utf8');
+            } else {
+              reportContent += '✅ Analyse terminée. Aucun problème majeur détecté.';
+            }
+            
+            // Ajouter un footer
+            reportContent += '\n\n---\n';
+            reportContent += `🔍 Commit: \`${context.sha.substring(0, 7)}\`\n`;
+            reportContent += `⏰ Analysé le: ${new Date().toLocaleString('fr-FR')}\n`;
+            reportContent += `🤖 Propulsé par Claude Sonnet 4.5`;
+            
+            // Poster le commentaire
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: reportContent
+            });
+      
+      - name: ✅ Résumé de l'analyse
+        if: always()
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📊 RÉSUMÉ DE L'ANALYSE IA"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          
+          if [ "${{ steps.changed-files.outputs.found }}" == "true" ]; then
+            if [ -f "code_review_"*.json ]; then
+              echo "✅ Revue de code terminée avec succès"
+              echo "📁 Rapport disponible dans les artefacts"
+            else
+              echo "⚠️ Aucun rapport généré"
+            fi
+          else
+            echo "ℹ️ Aucun fichier Java à analyser"
+          fi
+          
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

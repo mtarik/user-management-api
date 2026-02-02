@@ -1,0 +1,84 @@
+# ════════════════════════════════════════════════════════════════════════════
+# 📝 EXEMPLE DE WORKFLOW APPELANT POUR VOS REPOSITORIES
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Copiez ce fichier dans vos repositories Java à l'emplacement :
+# .github/workflows/ai-code-review.yml
+#
+# Personnalisez les paramètres selon vos besoins
+# ════════════════════════════════════════════════════════════════════════════
+
+name: 🤖 AI Code Review
+
+on:
+  # Se déclenche sur les Pull Requests
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**.java'
+
+  # Se déclenche sur les commits sur ces branches
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+      - 'feat/**'
+      - 'hotfix/**'
+    paths:
+      - '**.java'
+
+  # Permet le déclenchement manuel
+  workflow_dispatch:
+
+jobs:
+  call-ai-review:
+    name: Analyse IA du code Java
+    # ⚠️ IMPORTANT: Remplacez "VOTRE_USERNAME" par votre nom d'utilisateur GitHub
+    # Si c'est une organisation, utilisez le nom de l'organisation
+    uses: VOTRE_USERNAME/java-ai-code-review/.github/workflows/reusable-ai-review.yml@main
+
+    with:
+      # Version de Java (17, 11, 8, etc.)
+      java-version: '17'
+
+      # Outil de build: 'auto', 'maven', ou 'gradle'
+      build-tool: 'auto'
+
+      # Activer les analyses statiques (Checkstyle, PMD)
+      enable-static-analysis: true
+
+      # Poster un commentaire sur la Pull Request
+      post-pr-comment: true
+
+      # Échouer le workflow si des problèmes critiques sont détectés
+      fail-on-critical: false
+
+    secrets:
+      # La clé API Anthropic doit être configurée dans les secrets du repository
+      # Settings → Secrets and variables → Actions → New repository secret
+      # Nom: ANTHROPIC_API_KEY
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+# ════════════════════════════════════════════════════════════════════════════
+# 📚 CONFIGURATION AVANCÉE
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Vous pouvez personnaliser le déclenchement du workflow :
+#
+# 1. UNIQUEMENT SUR LES PULL REQUESTS :
+#    Commentez la section "push" ci-dessus
+#
+# 2. AUTRES BRANCHES :
+#    Ajoutez vos branches dans "push.branches"
+#
+# 3. AUTRES FICHIERS :
+#    Ajoutez d'autres patterns dans "paths" (ex: '**.kt' pour Kotlin)
+#
+# 4. DÉSACTIVER L'ANALYSE STATIQUE :
+#    Changez "enable-static-analysis: false"
+#
+# 5. ÉCHOUER LE BUILD SUR PROBLÈMES CRITIQUES :
+#    Changez "fail-on-critical: true"
+#
+# ════════════════════════════════════════════════════════════════════════════

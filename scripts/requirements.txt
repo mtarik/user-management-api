@@ -1,0 +1,4 @@
+# Python dependencies for AI Code Reviewer
+
+anthropic>=0.40.0
+requests>=2.31.0

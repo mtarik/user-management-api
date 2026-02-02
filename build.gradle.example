@@ -1,0 +1,91 @@
+plugins {
+    id 'java'
+    id 'checkstyle'
+    id 'pmd'
+    id 'com.github.spotbugs' version '6.0.7'
+    id 'jacoco'
+}
+
+group = 'com.example'
+version = '1.0.0'
+sourceCompatibility = '17'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Add your project dependencies here
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+}
+
+// Checkstyle configuration
+checkstyle {
+    toolVersion = '10.12.5'
+    configFile = file('.github/config/checkstyle.xml')
+    ignoreFailures = true
+}
+
+checkstyleMain {
+    source = 'src/main/java'
+}
+
+checkstyleTest {
+    source = 'src/test/java'
+}
+
+// PMD configuration
+pmd {
+    toolVersion = '7.0.0'
+    ruleSetFiles = files('.github/config/pmd-ruleset.xml')
+    ignoreFailures = true
+    ruleSets = [] // Clear default rules, use custom ruleset
+}
+
+pmdMain {
+    source = 'src/main/java'
+}
+
+pmdTest {
+    source = 'src/test/java'
+}
+
+// SpotBugs configuration
+spotbugs {
+    toolVersion = '4.8.3'
+    effort = 'max'
+    reportLevel = 'low'
+    ignoreFailures = true
+}
+
+tasks.withType(com.github.spotbugs.snom.SpotBugsTask) {
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+// JaCoCo configuration
+jacoco {
+    toolVersion = '0.8.11'
+}
+
+test {
+    useJUnitPlatform()
+    finalizedBy jacocoTestReport
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+// Task to run all quality checks
+task qualityCheck {
+    dependsOn 'checkstyleMain', 'pmdMain', 'spotbugsMain', 'test', 'jacocoTestReport'
+    group = 'verification'
+    description = 'Runs all quality checks'
+}
