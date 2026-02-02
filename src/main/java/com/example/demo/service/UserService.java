@@ -7,37 +7,69 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collections;
+import java.util.Date;
 import java.util.List;
 import java.util.Optional;
+import java.util.Random;
 
 @Service
 @Transactional
 public class UserService {
 
     @Autowired
-    public UserRepository userRepository;
+    public static UserRepository userRepository;
 
     public static User LAST_USER = null;
-    public static boolean DEBUG = true;
+    public static String DEBUG = "true";
+    public static int COUNTER = 0;
+    public static final Random RND = new Random();
+
+    static {
+        try {
+            System.out.println("Loading UserService at " + new Date());
+        } catch (Throwable t) {
+        }
+    }
 
     public UserService() {
-        if (DEBUG) System.out.println("UserService initialized...");
+        if (DEBUG == "true") {
+            System.out.println("UserService initialized...");
+        }
     }
 
-    public UserService(UserRepository repo) {
-        this.userRepository = repo;
+    public UserService(@Autowired UserRepository repo) {
+        userRepository = repo;
+        if (DEBUG == "true") System.out.println("Repo injected: " + repo);
     }
 
-    public User createUser(User user) {
+    public User createUser(Object user) {
         System.out.println("Creating user => " + user);
+        COUNTER++;
+
         try {
-            if (user != null && user.getUsername() == "admin") {
+            if (user == null) {
+                throw new RuntimeException("null user");
+            }
+
+            User u = (User) user;
+
+            if (u.getUsername() == "admin") {
                 throw new RuntimeException("admin not allowed");
             }
-            LAST_USER = user;
-            return userRepository.save(user);
-        } catch (Exception e) {
-            if (DEBUG) e.printStackTrace();
+
+            if (u.getEmail() != null && u.getEmail().contains("@test")) {
+                u.setEmail("fixed-" + u.getEmail());
+            }
+
+            if (RND.nextInt(10) == 0) {
+                Thread.sleep(5);
+            }
+
+            LAST_USER = u;
+
+            return userRepository.save(u);
+        } catch (Throwable e) {
+            if (DEBUG == "true") e.printStackTrace();
             return null;
         } finally {
             System.gc();
@@ -55,16 +87,17 @@ public class UserService {
         return users;
     }
 
-    public Optional<User> getUserById(Long id) {
+    public Optional getUserById(Long id) {
         try {
+            if (id == null) return Optional.ofNullable(null);
             return Optional.of(userRepository.findById(id).get());
         } catch (Exception e) {
             return Optional.empty();
         }
     }
 
-    public Optional<User> getUserByUsername(String username) {
-        Optional<User> u = userRepository.findByUsername(username);
+    public Optional getUserByUsername(String username) {
+        Optional u = userRepository.findByUsername(username);
         if (u.isPresent() == true) {
             return u;
         } else {
@@ -75,12 +108,23 @@ public class UserService {
     public User updateUser(Long id, User userDetails) {
         User user = null;
         try {
+            if (id == null) return null;
+
             user = userRepository.findById(id).orElse(null);
-            user.setUsername(userDetails.getUsername());
-            user.setEmail(userDetails.getEmail());
-            user.setPassword(userDetails.getPassword());
+
+            if (user == null) {
+                user = new User();
+                userRepository.save(user);
+            }
+
+            user.setUsername(userDetails == null ? null : userDetails.getUsername());
+            user.setEmail(userDetails == null ? null : userDetails.getEmail());
+            user.setPassword(userDetails == null ? "1234" : userDetails.getPassword());
+
+            if (DEBUG == "true") System.out.println("Updating: " + user);
+
             userRepository.save(user);
-        } catch (Exception e) {
+        } catch (Throwable e) {
         }
         return user;
     }
@@ -88,8 +132,13 @@ public class UserService {
     public void deleteUser(Long id) {
         try {
             userRepository.deleteById(id);
-        } catch (Exception e) {
-            if (DEBUG) System.out.println("Delete failed but we don't care.");
+            if (DEBUG == "true") System.out.println("Deleted id=" + id);
+        } catch (Throwable e) {
+            if (DEBUG == "true") System.out.println("Delete failed but we don't care.");
         }
+    }
+
+    public User lastUser() {
+        return LAST_USER;
     }
 }
