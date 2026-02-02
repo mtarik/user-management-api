@@ -2,7 +2,7 @@
 
 Système automatisé de revue de code Java utilisant l'IA Claude d'Anthropic. Ce système s'exécute automatiquement à chaque commit ou pull request pour analyser la qualité du code Java.
 
-## 🌟 Deux modes d'utilisation
+## 🌟 Deux modes d'utilisation :
 
 Ce système peut être déployé de **deux façons** :
 
