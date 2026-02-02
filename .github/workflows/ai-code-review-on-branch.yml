@@ -218,6 +218,7 @@ jobs:
                   comments.push({
                     path: filePath,
                     line: issue.line,
+                    side: 'RIGHT',
                     body: commentBody
                   });
                 }
@@ -244,14 +245,28 @@ jobs:
             // Créer le review avec commentaires
             console.log(`📝 Création du review avec ${comments.length} commentaires`);
 
-            await github.rest.pulls.createReview({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: ${{ steps.find-pr.outputs.pr-number }},
-              event: 'COMMENT',
-              body: summaryBody,
-              comments: comments
-            });
+            try {
+              await github.rest.pulls.createReview({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: ${{ steps.find-pr.outputs.pr-number }},
+                event: 'COMMENT',
+                body: summaryBody,
+                comments: comments
+              });
+              console.log('✅ Review créé avec succès');
+            } catch (error) {
+              console.log('⚠️ Erreur lors de la création du review avec commentaires:', error.message);
+              console.log('📝 Posting du résumé uniquement en commentaire');
+
+              // Si les commentaires inline échouent, poster uniquement le résumé
+              await github.rest.issues.createComment({
+                issue_number: ${{ steps.find-pr.outputs.pr-number }},
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: summaryBody
+              });
+            }
 
       - name: ✅ Résumé de l'analyse
         if: always()
