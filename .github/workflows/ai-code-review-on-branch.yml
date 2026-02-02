@@ -171,7 +171,7 @@ jobs:
               console.log('ℹ️ Aucune PR ouverte pour cette branche');
             }
 
-      - name: 💬 Commenter la Pull Request
+      - name: 💬 Créer un Review avec commentaires sur les lignes
         if: steps.changed-files.outputs.found == 'true' && steps.find-pr.outputs.has-pr == 'true'
         uses: actions/github-script@v7
         with:
@@ -179,32 +179,78 @@ jobs:
           script: |
             const fs = require('fs');
 
-            // Lire le rapport Markdown
-            let reportContent = '## 🤖 Revue de Code IA - Résultats\n\n';
-
-            // Chercher les fichiers de rapport
+            // Lire le rapport JSON
             const files = fs.readdirSync('.');
-            const mdFile = files.find(f => f.startsWith('code_review_') && f.endsWith('.md'));
+            const jsonFile = files.find(f => f.startsWith('code_review_') && f.endsWith('.json'));
 
-            if (mdFile && fs.existsSync(mdFile)) {
-              reportContent += fs.readFileSync(mdFile, 'utf8');
-            } else {
-              reportContent += '✅ Analyse terminée. Aucun problème majeur détecté.';
+            if (!jsonFile || !fs.existsSync(jsonFile)) {
+              console.log('⚠️ Aucun rapport JSON trouvé');
+              return;
             }
 
-            // Ajouter un footer
-            reportContent += '\n\n---\n';
-            reportContent += `🔍 Commit: \`${context.sha.substring(0, 7)}\`\n`;
-            reportContent += `🌿 Branche: \`${{ github.ref_name }}\`\n`;
-            reportContent += `⏰ Analysé le: ${new Date().toLocaleString('fr-FR')}\n`;
-            reportContent += `🤖 Propulsé par Claude Sonnet 4.5`;
+            const reviewData = JSON.parse(fs.readFileSync(jsonFile, 'utf8'));
+            const comments = [];
+            let summaryBody = '## 🤖 Revue de Code IA - Résumé\n\n';
 
-            // Poster le commentaire
-            await github.rest.issues.createComment({
-              issue_number: ${{ steps.find-pr.outputs.pr-number }},
+            // Icônes pour les sévérités
+            const severityIcons = {
+              'critical': '🔴',
+              'high': '🟠',
+              'medium': '🟡',
+              'low': '🔵',
+              'info': 'ℹ️'
+            };
+
+            // Construire les commentaires sur les lignes
+            for (const fileReview of reviewData.files || []) {
+              const filePath = fileReview.path;
+              summaryBody += `\n### 📄 ${filePath}\n`;
+              summaryBody += `**Score**: ${fileReview.score || 'N/A'}/10\n\n`;
+
+              let fileHasIssues = false;
+
+              for (const issue of fileReview.issues || []) {
+                if (issue.line) {
+                  fileHasIssues = true;
+                  const icon = severityIcons[issue.severity] || '•';
+                  const commentBody = `${icon} **${issue.severity?.toUpperCase() || 'INFO'}** - ${issue.title || 'Problème détecté'}\n\n${issue.description || ''}\n\n${issue.suggestion ? `💡 **Suggestion**: ${issue.suggestion}` : ''}`;
+
+                  comments.push({
+                    path: filePath,
+                    line: issue.line,
+                    body: commentBody
+                  });
+                }
+              }
+
+              if (!fileHasIssues && fileReview.issues?.length === 0) {
+                summaryBody += '✅ Aucun problème détecté\n\n';
+              }
+            }
+
+            // Ajouter le résumé global
+            if (reviewData.summary) {
+              summaryBody += `\n## 📊 Résumé Global\n\n${reviewData.summary}\n\n`;
+            }
+            if (reviewData.overall_score) {
+              summaryBody += `**Score Global**: ${reviewData.overall_score}/100\n\n`;
+            }
+
+            summaryBody += '\n---\n';
+            summaryBody += `🔍 Commit: \`${context.sha.substring(0, 7)}\`\n`;
+            summaryBody += `⏰ Analysé le: ${new Date().toLocaleString('fr-FR')}\n`;
+            summaryBody += `🤖 Propulsé par Claude Sonnet 4.5`;
+
+            // Créer le review avec commentaires
+            console.log(`📝 Création du review avec ${comments.length} commentaires`);
+
+            await github.rest.pulls.createReview({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: reportContent
+              pull_number: ${{ steps.find-pr.outputs.pr-number }},
+              event: 'COMMENT',
+              body: summaryBody,
+              comments: comments
             });
 
       - name: ✅ Résumé de l'analyse
