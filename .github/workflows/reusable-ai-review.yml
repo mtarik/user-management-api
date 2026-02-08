@@ -30,8 +30,8 @@ on:
         default: false
     secrets:
       ANTHROPIC_API_KEY:
-        description: 'Clé API Anthropic pour Claude'
-        required: true
+        description: 'Clé API Anthropic pour Claude (optionnel pour analyse basique)'
+        required: false
 
 jobs:
   ai-code-review:
@@ -127,38 +127,65 @@ jobs:
           fi
         continue-on-error: true
 
-      - name: 🐍 Setup Python
-        if: steps.changed-files.outputs.found == 'true'
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: 📥 Télécharger le script AI Reviewer
+      - name: 🤖 Analyse des fichiers modifiés
         if: steps.changed-files.outputs.found == 'true'
         run: |
-          mkdir -p scripts
-          curl -sSL https://raw.githubusercontent.com/${{ github.repository_owner }}/java-ai-code-review/main/scripts/ai_code_reviewer.py \
-            -o scripts/ai_code_reviewer.py
-          curl -sSL https://raw.githubusercontent.com/${{ github.repository_owner }}/java-ai-code-review/main/scripts/requirements.txt \
-            -o scripts/requirements.txt
-          chmod +x scripts/ai_code_reviewer.py
+          echo "🧠 Analyse des fichiers Java modifiés..."
+          echo "# 🤖 Revue de Code IA - Analyse statique" > code_review_report.md
+          echo "" >> code_review_report.md
+          echo "## Fichiers analysés" >> code_review_report.md
+          echo "" >> code_review_report.md
 
-      - name: 📦 Installer les dépendances Python
-        if: steps.changed-files.outputs.found == 'true'
-        run: |
-          pip install -r scripts/requirements.txt
+          while IFS= read -r file; do
+            if [ -f "$file" ]; then
+              echo "- \`$file\`" >> code_review_report.md
 
-      - name: 🤖 Analyse IA avec Claude
-        if: steps.changed-files.outputs.found == 'true'
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-          REPO_NAME: ${{ github.repository }}
-          COMMIT_SHA: ${{ github.sha }}
-        run: |
-          echo "🧠 Lancement de l'analyse IA..."
-          python scripts/ai_code_reviewer.py
+              # Vérifications basiques
+              echo "" >> code_review_report.md
+              echo "### Analyse de \`$file\`" >> code_review_report.md
+              echo "" >> code_review_report.md
+
+              # Recherche de System.out.println
+              if grep -q "System\.out\.println\|System\.err\.println" "$file"; then
+                echo "⚠️ **Avertissement**: Utilisation de \`System.out.println\` détectée. Privilégier un logger." >> code_review_report.md
+                echo "" >> code_review_report.md
+              fi
+
+              # Recherche de printStackTrace
+              if grep -q "printStackTrace" "$file"; then
+                echo "⚠️ **Avertissement**: Utilisation de \`printStackTrace()\` détectée. Utiliser un logger approprié." >> code_review_report.md
+                echo "" >> code_review_report.md
+              fi
+
+              # Recherche de comparaisons avec ==
+              if grep -q '== "' "$file" || grep -q '" ==' "$file"; then
+                echo "🔴 **Erreur**: Comparaison de String avec \`==\`. Utiliser \`.equals()\`." >> code_review_report.md
+                echo "" >> code_review_report.md
+              fi
+
+              # Recherche de champs static avec @Autowired
+              if grep -q "@Autowired" "$file" && grep -q "static.*Repository" "$file"; then
+                echo "🔴 **Erreur critique**: \`@Autowired\` sur un champ \`static\` détecté. Spring ne peut pas injecter dans des champs statiques." >> code_review_report.md
+                echo "" >> code_review_report.md
+              fi
+
+              # Recherche de System.gc()
+              if grep -q "System\.gc()" "$file"; then
+                echo "🔴 **Anti-pattern**: Appel explicite à \`System.gc()\`. Ne devrait jamais être utilisé." >> code_review_report.md
+                echo "" >> code_review_report.md
+              fi
+
+              # Recherche de retours null
+              if grep -q "return null" "$file"; then
+                echo "⚠️ **Avertissement**: Retour de \`null\` détecté. Privilégier \`Optional\` ou lever une exception." >> code_review_report.md
+                echo "" >> code_review_report.md
+              fi
+
+              echo "" >> code_review_report.md
+            fi
+          done < changed_files.txt
+
+          cat code_review_report.md
 
       - name: 📊 Upload du rapport
         if: always() && steps.changed-files.outputs.found == 'true'
@@ -166,8 +193,7 @@ jobs:
         with:
           name: ai-review-report-${{ github.sha }}
           path: |
-            code_review_*.md
-            code_review_*.json
+            code_review_report.md
           retention-days: 30
 
       - name: 💬 Commenter la Pull Request
@@ -178,21 +204,19 @@ jobs:
           script: |
             const fs = require('fs');
 
-            let reportContent = '## 🤖 Revue de Code IA - Résultats\n\n';
+            let reportContent = '';
 
-            const files = fs.readdirSync('.');
-            const mdFile = files.find(f => f.startsWith('code_review_') && f.endsWith('.md'));
-
-            if (mdFile && fs.existsSync(mdFile)) {
-              reportContent += fs.readFileSync(mdFile, 'utf8');
+            if (fs.existsSync('code_review_report.md')) {
+              reportContent = fs.readFileSync('code_review_report.md', 'utf8');
             } else {
+              reportContent = '## 🤖 Revue de Code IA - Résultats\n\n';
               reportContent += '✅ Analyse terminée. Aucun problème majeur détecté.';
             }
 
             reportContent += '\n\n---\n';
             reportContent += `🔍 Commit: \`${context.sha.substring(0, 7)}\`\n`;
             reportContent += `⏰ Analysé le: ${new Date().toLocaleString('fr-FR')}\n`;
-            reportContent += `🤖 Propulsé par Claude Sonnet 4.5`;
+            reportContent += `🤖 Analyse automatisée par GitHub Actions`;
 
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
@@ -204,19 +228,8 @@ jobs:
       - name: 🔍 Vérifier les problèmes critiques
         if: steps.changed-files.outputs.found == 'true' && inputs.fail-on-critical
         run: |
-          if [ -f "code_review_"*.json ]; then
-            CRITICAL_COUNT=$(python3 -c "
-            import json
-            import glob
-            files = glob.glob('code_review_*.json')
-            if files:
-                with open(files[0]) as f:
-                    data = json.load(f)
-                    count = sum(len([i for i in f.get('issues', []) if i.get('severity') == 'critical']) for f in data.get('files', []))
-                    print(count)
-            else:
-                print(0)
-            ")
+          if [ -f "code_review_report.md" ]; then
+            CRITICAL_COUNT=$(grep -c "🔴 \*\*Erreur critique\*\*" code_review_report.md || echo 0)
 
             if [ "$CRITICAL_COUNT" -gt 0 ]; then
               echo "❌ $CRITICAL_COUNT problème(s) critique(s) détecté(s)!"

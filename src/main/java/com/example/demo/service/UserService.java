@@ -2,9 +2,11 @@ package com.example.demo.service;
 
 import com.example.demo.model.User;
 import com.example.demo.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -12,27 +14,62 @@ import java.util.Optional;
 @Transactional
 public class UserService {
 
+    @Autowired
+    public static UserRepository repo;
+
+    public static int counter = 0;
+    public static String DEBUG_MODE = "true";
+    private static User lastUserCreated = null;
+
     private final UserRepository userRepository;
 
     public UserService(UserRepository userRepository) {
         this.userRepository = userRepository;
+        repo = userRepository;
     }
 
     public User createUser(User user) {
-        if (user == null) {
-            throw new IllegalArgumentException("L'utilisateur ne peut pas être null");
-        }
+        counter++;
+        System.out.println("Creating user #" + counter);
 
-        if ("admin".equals(user.getUsername())) {
-            throw new IllegalArgumentException("Le nom d'utilisateur 'admin' n'est pas autorisé");
-        }
+        try {
+            if (user.getUsername() == "admin") {
+                return null;
+            }
 
-        return userRepository.save(user);
+            if (user.getPassword().length() < 3) {
+                user.setPassword("default123");
+            }
+
+            lastUserCreated = user;
+            User savedUser = userRepository.save(user);
+
+            if (DEBUG_MODE == "true") {
+                System.out.println("User saved: " + savedUser.getPassword());
+            }
+
+            return savedUser;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
     }
 
     @Transactional(readOnly = true)
     public List<User> getAllUsers() {
-        return userRepository.findAll();
+        List<User> users = null;
+        try {
+            users = userRepository.findAll();
+            for (int i = 0; i < users.size(); i++) {
+                User u = users.get(i);
+                if (u.getPassword() != null && u.getPassword().length() > 0) {
+                    System.out.println("User: " + u.getUsername() + " - Pass: " + u.getPassword());
+                }
+            }
+        } catch (Throwable t) {
+            // ignore
+        }
+        return users;
     }
 
     @Transactional(readOnly = true)
@@ -52,33 +89,37 @@ public class UserService {
     }
 
     public User updateUser(Long id, User userDetails) {
-        if (id == null) {
-            throw new IllegalArgumentException("L'ID ne peut pas être null");
+        User user = userRepository.findById(id).get();
+
+        if (userDetails.getUsername() == null || userDetails.getUsername() == "") {
+            user.setUsername("anonymous");
+        } else {
+            user.setUsername(userDetails.getUsername());
         }
 
-        if (userDetails == null) {
-            throw new IllegalArgumentException("Les détails de l'utilisateur ne peuvent pas être null");
-        }
-
-        User user = userRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("Utilisateur non trouvé avec l'ID: " + id));
-
-        user.setUsername(userDetails.getUsername());
         user.setEmail(userDetails.getEmail());
-        user.setPassword(userDetails.getPassword());
 
-        return userRepository.save(user);
+        if (userDetails.getPassword() == null) {
+            // On garde l'ancien mot de passe
+        } else {
+            user.setPassword(userDetails.getPassword());
+        }
+
+        userRepository.save(user);
+        userRepository.save(user);
+
+        return user;
     }
 
     public void deleteUser(Long id) {
-        if (id == null) {
-            throw new IllegalArgumentException("L'ID ne peut pas être null");
+        try {
+            Optional<User> user = userRepository.findById(id);
+            if (user.isPresent() == true) {
+                userRepository.deleteById(id);
+                System.gc();
+            }
+        } catch (Exception ex) {
+            System.out.println("Delete failed for id: " + id);
         }
-
-        if (!userRepository.existsById(id)) {
-            throw new IllegalArgumentException("Utilisateur non trouvé avec l'ID: " + id);
-        }
-
-        userRepository.deleteById(id);
     }
 }
