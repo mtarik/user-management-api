@@ -97,27 +97,21 @@ jobs:
             target/surefire-reports/
           retention-days: 30
 
-      - name: 💬 Poster résumé des tests
-        if: github.event_name == 'pull_request' && always()
-        uses: actions/github-script@v7
+      - name: 📤 Sauvegarder résumé pour combinaison
+        if: always()
+        run: |
+          mkdir -p workflow-data
+          if [ -f test-summary.txt ]; then
+            cp test-summary.txt workflow-data/
+          fi
+
+      - name: 📦 Upload résumé des tests
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-
-            let summary = '⚠️ Tests non exécutés';
-            if (fs.existsSync('test-summary.txt')) {
-              summary = fs.readFileSync('test-summary.txt', 'utf8').trim();
-            }
-
-            const reportContent = `### 🧪 Tests & Couverture\n\n${summary}\n\n_📁 Rapport détaillé dans les artefacts • 🤖 Revue de code dans "Files changed"_`;
-
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: reportContent
-            });
+          name: test-summary
+          path: workflow-data/
+          retention-days: 1
 
   call-ai-review:
     name: 📊 Analyse IA du code Java
@@ -139,7 +133,7 @@ jobs:
       enable-static-analysis: true
 
       # Poster un commentaire sur la Pull Request
-      post-pr-comment: true
+      post-pr-comment: false
 
       # Échouer le workflow si des problèmes critiques sont détectés
       fail-on-critical: false
@@ -149,3 +143,65 @@ jobs:
       # Settings → Secrets and variables → Actions → New repository secret
       # Nom: ANTHROPIC_API_KEY
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+  combined-summary:
+    name: 📋 Résumé Combiné
+    needs: [test-coverage, call-ai-review]
+    if: github.event_name == 'pull_request' && always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: 📥 Télécharger résumé des tests
+        uses: actions/download-artifact@v4
+        with:
+          name: test-summary
+          path: workflow-data
+        continue-on-error: true
+
+      - name: 📥 Checkout pour analyser les fichiers
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 📊 Analyser les fichiers modifiés
+        id: analysis
+        run: |
+          # Récupérer le résumé des tests
+          TEST_SUMMARY="⚠️ Tests non exécutés"
+          if [ -f workflow-data/test-summary.txt ]; then
+            TEST_SUMMARY=$(cat workflow-data/test-summary.txt)
+          fi
+
+          # Compter les fichiers Java modifiés
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            JAVA_FILES=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | grep '\.java$' | wc -l)
+          else
+            JAVA_FILES=$(git diff --name-only HEAD~1 HEAD | grep '\.java$' | wc -l)
+          fi
+
+          echo "test_summary=$TEST_SUMMARY" >> $GITHUB_OUTPUT
+          echo "java_files=$JAVA_FILES" >> $GITHUB_OUTPUT
+
+      - name: 💬 Poster résumé combiné
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const testSummary = '${{ steps.analysis.outputs.test_summary }}';
+            const javaFiles = '${{ steps.analysis.outputs.java_files }}';
+
+            const reportContent = '### 🤖 Résumé de l\'Analyse Automatique\n\n' +
+              '**Tests:** ' + testSummary + '\n' +
+              '**Fichiers analysés:** ' + javaFiles + ' fichiers Java modifiés\n' +
+              '**Revue IA:** 🔍 Commentaires postés dans "Files changed"\n\n' +
+              '_📁 Rapports détaillés dans les artefacts_';
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: reportContent
+            });
