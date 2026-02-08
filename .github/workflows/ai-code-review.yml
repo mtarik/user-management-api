@@ -28,6 +28,10 @@ on:
 jobs:
   call-ai-review:
     name: 📊 Analyse IA du code Java
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
     uses: mtarik/java-ai-code-review/.github/workflows/reusable-ai-review.yml@main
 
     with:
