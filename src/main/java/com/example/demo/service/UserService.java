@@ -34,7 +34,7 @@ public class UserService {
 
         try {
             if (user.getUsername() == "admin") {
-                return null;
+                throw new IllegalArgumentException("Le nom d'utilisateur 'admin' n'est pas autorisé");
             }
 
             if (user.getPassword().length() < 3) {
@@ -51,7 +51,7 @@ public class UserService {
             return savedUser;
         } catch (Exception e) {
             e.printStackTrace();
-            return null;
+            throw e;
         }
     }
 
@@ -89,7 +89,8 @@ public class UserService {
     }
 
     public User updateUser(Long id, User userDetails) {
-        User user = userRepository.findById(id).get();
+        User user = userRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Utilisateur avec l'ID " + id + " non trouvé"));
 
         if (userDetails.getUsername() == null || userDetails.getUsername() == "") {
             user.setUsername("anonymous");
@@ -114,12 +115,14 @@ public class UserService {
     public void deleteUser(Long id) {
         try {
             Optional<User> user = userRepository.findById(id);
-            if (user.isPresent() == true) {
-                userRepository.deleteById(id);
-                System.gc();
+            if (user.isPresent() == false) {
+                throw new IllegalArgumentException("Utilisateur avec l'ID " + id + " non trouvé");
             }
+            userRepository.deleteById(id);
+            System.gc();
         } catch (Exception ex) {
             System.out.println("Delete failed for id: " + id);
+            throw ex;
         }
     }
 }
