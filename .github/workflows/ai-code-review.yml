@@ -45,7 +45,7 @@ jobs:
       enable-static-analysis: true
 
       # Poster un commentaire sur la Pull Request
-      post-pr-comment: false
+      post-pr-comment: true
 
       # Échouer le workflow si des problèmes critiques sont détectés
       fail-on-critical: false
