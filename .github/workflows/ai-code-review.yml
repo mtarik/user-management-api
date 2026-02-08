@@ -26,96 +26,8 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-coverage:
-    name: 🧪 Tests & Couverture
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-
-    steps:
-      - name: 📥 Checkout du code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: ☕ Setup Java
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-
-      - name: 📦 Cache Maven
-        uses: actions/cache@v3
-        with:
-          path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2
-
-      - name: 🧪 Exécuter les tests avec couverture
-        run: |
-          echo "🧪 Exécution des tests unitaires et d'intégration..."
-          mvn clean test jacoco:report -B
-        continue-on-error: false
-
-      - name: 📊 Analyser les résultats des tests
-        if: always()
-        run: |
-          # Extraire les statistiques des tests
-          if [ -f target/surefire-reports/TEST-*.xml ]; then
-            TOTAL_TESTS=$(grep -r "tests=" target/surefire-reports/TEST-*.xml | sed 's/.*tests="\([0-9]*\)".*/\1/' | awk '{s+=$1} END {print s}')
-            FAILURES=$(grep -r "failures=" target/surefire-reports/TEST-*.xml | sed 's/.*failures="\([0-9]*\)".*/\1/' | awk '{s+=$1} END {print s}')
-            ERRORS=$(grep -r "errors=" target/surefire-reports/TEST-*.xml | sed 's/.*errors="\([0-9]*\)".*/\1/' | awk '{s+=$1} END {print s}')
-            SUCCESS=$((TOTAL_TESTS - FAILURES - ERRORS))
-
-            # Extraire la couverture
-            COVERAGE="N/A"
-            if [ -f "target/site/jacoco/index.html" ]; then
-              COVERAGE=$(grep -A 1 "Total" target/site/jacoco/index.html | grep -oP '\d+%' | head -1 || echo "N/A")
-            fi
-
-            # Créer badge de status
-            if [ $FAILURES -eq 0 ] && [ $ERRORS -eq 0 ]; then
-              STATUS="✅ $SUCCESS/$TOTAL_TESTS tests passed | 📊 Coverage: $COVERAGE"
-            else
-              STATUS="❌ $((FAILURES + ERRORS)) tests failed | $SUCCESS/$TOTAL_TESTS passed"
-            fi
-
-            echo "$STATUS" > test-summary.txt
-            echo "$STATUS"
-          else
-            echo "⚠️ No test results found" > test-summary.txt
-          fi
-
-      - name: 📊 Upload rapport de couverture
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report-${{ github.sha }}
-          path: |
-            target/site/jacoco/
-            target/surefire-reports/
-          retention-days: 30
-
-      - name: 📤 Sauvegarder résumé pour combinaison
-        if: always()
-        run: |
-          mkdir -p workflow-data
-          if [ -f test-summary.txt ]; then
-            cp test-summary.txt workflow-data/
-          fi
-
-      - name: 📦 Upload résumé des tests
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-summary
-          path: workflow-data/
-          retention-days: 1
-
   call-ai-review:
     name: 📊 Analyse IA du code Java
-    needs: test-coverage
     permissions:
       contents: read
       pull-requests: write
@@ -144,9 +56,9 @@ jobs:
       # Nom: ANTHROPIC_API_KEY
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 
-  combined-summary:
-    name: 📋 Résumé Combiné
-    needs: [test-coverage, call-ai-review]
+  summary:
+    name: 📋 Résumé de l'Analyse
+    needs: call-ai-review
     if: github.event_name == 'pull_request' && always()
     runs-on: ubuntu-latest
     permissions:
@@ -154,13 +66,6 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: 📥 Télécharger résumé des tests
-        uses: actions/download-artifact@v4
-        with:
-          name: test-summary
-          path: workflow-data
-        continue-on-error: true
-
       - name: 📥 Checkout pour analyser les fichiers
         uses: actions/checkout@v4
         with:
@@ -169,12 +74,6 @@ jobs:
       - name: 📊 Analyser les fichiers modifiés
         id: analysis
         run: |
-          # Récupérer le résumé des tests
-          TEST_SUMMARY="⚠️ Tests non exécutés"
-          if [ -f workflow-data/test-summary.txt ]; then
-            TEST_SUMMARY=$(cat workflow-data/test-summary.txt)
-          fi
-
           # Compter les fichiers Java modifiés
           if [ "${{ github.event_name }}" == "pull_request" ]; then
             JAVA_FILES=$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | grep '\.java$' | wc -l)
@@ -182,22 +81,19 @@ jobs:
             JAVA_FILES=$(git diff --name-only HEAD~1 HEAD | grep '\.java$' | wc -l)
           fi
 
-          echo "test_summary=$TEST_SUMMARY" >> $GITHUB_OUTPUT
           echo "java_files=$JAVA_FILES" >> $GITHUB_OUTPUT
 
-      - name: 💬 Poster résumé combiné
+      - name: 💬 Poster résumé
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const testSummary = '${{ steps.analysis.outputs.test_summary }}';
             const javaFiles = '${{ steps.analysis.outputs.java_files }}';
 
-            const reportContent = '### 🤖 Résumé de l\'Analyse Automatique\n\n' +
-              '**Tests:** ' + testSummary + '\n' +
+            const reportContent = '### 🤖 Résumé de l\'Analyse IA\n\n' +
               '**Fichiers analysés:** ' + javaFiles + ' fichiers Java modifiés\n' +
-              '**Revue IA:** 🔍 Commentaires postés dans "Files changed"\n\n' +
-              '_📁 Rapports détaillés dans les artefacts_';
+              '**Revue IA:** 🔍 Commentaires détaillés dans "Files changed"\n\n' +
+              '_📁 Rapports complets dans les artefacts du workflow_';
 
             await github.rest.issues.createComment({
               issue_number: context.issue.number,
