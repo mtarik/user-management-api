@@ -26,8 +26,131 @@ on:
   workflow_dispatch:
 
 jobs:
+  test-coverage:
+    name: 🧪 Tests & Couverture
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - name: 📥 Checkout du code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: ☕ Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: 📦 Cache Maven
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: 🧪 Exécuter les tests avec couverture
+        run: |
+          echo "🧪 Exécution des tests unitaires et d'intégration..."
+          mvn clean test jacoco:report -B
+        continue-on-error: false
+
+      - name: 📊 Analyser les résultats des tests
+        if: always()
+        run: |
+          echo "# 🧪 Rapport de Tests et Couverture" > test-report.md
+          echo "" >> test-report.md
+
+          # Extraire les statistiques des tests
+          if [ -f "target/surefire-reports/TEST-*.xml" ]; then
+            TOTAL_TESTS=$(grep -r "tests=" target/surefire-reports/TEST-*.xml | sed 's/.*tests="\([0-9]*\)".*/\1/' | awk '{s+=$1} END {print s}')
+            FAILURES=$(grep -r "failures=" target/surefire-reports/TEST-*.xml | sed 's/.*failures="\([0-9]*\)".*/\1/' | awk '{s+=$1} END {print s}')
+            ERRORS=$(grep -r "errors=" target/surefire-reports/TEST-*.xml | sed 's/.*errors="\([0-9]*\)".*/\1/' | awk '{s+=$1} END {print s}')
+            SKIPPED=$(grep -r "skipped=" target/surefire-reports/TEST-*.xml | sed 's/.*skipped="\([0-9]*\)".*/\1/' | awk '{s+=$1} END {print s}')
+
+            SUCCESS=$((TOTAL_TESTS - FAILURES - ERRORS - SKIPPED))
+
+            echo "## 📈 Résultats des Tests" >> test-report.md
+            echo "" >> test-report.md
+            echo "| Métrique | Valeur |" >> test-report.md
+            echo "|----------|--------|" >> test-report.md
+            echo "| ✅ Tests réussis | $SUCCESS / $TOTAL_TESTS |" >> test-report.md
+            echo "| ❌ Tests échoués | $FAILURES |" >> test-report.md
+            echo "| ⚠️ Erreurs | $ERRORS |" >> test-report.md
+            echo "| ⏭️ Tests ignorés | $SKIPPED |" >> test-report.md
+            echo "" >> test-report.md
+
+            if [ $FAILURES -eq 0 ] && [ $ERRORS -eq 0 ]; then
+              echo "✅ **Tous les tests passent avec succès !**" >> test-report.md
+            else
+              echo "❌ **Attention: Des tests ont échoué**" >> test-report.md
+            fi
+            echo "" >> test-report.md
+          fi
+
+          # Analyser la couverture JaCoCo
+          if [ -f "target/site/jacoco/index.html" ]; then
+            echo "## 📊 Couverture de Code (JaCoCo)" >> test-report.md
+            echo "" >> test-report.md
+
+            # Extraire les statistiques de couverture
+            INSTRUCTION_COVERAGE=$(grep -A 1 "Total" target/site/jacoco/index.html | grep -oP '\d+%' | head -1 || echo "N/A")
+            BRANCH_COVERAGE=$(grep -A 1 "Total" target/site/jacoco/index.html | grep -oP '\d+%' | sed -n '2p' || echo "N/A")
+
+            echo "| Type de Couverture | Taux |" >> test-report.md
+            echo "|-------------------|------|" >> test-report.md
+            echo "| Instructions | $INSTRUCTION_COVERAGE |" >> test-report.md
+            echo "| Branches | $BRANCH_COVERAGE |" >> test-report.md
+            echo "" >> test-report.md
+
+            echo "📁 **Rapport détaillé disponible dans les artefacts**" >> test-report.md
+          fi
+
+          cat test-report.md
+
+      - name: 📊 Upload rapport de couverture
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ github.sha }}
+          path: |
+            target/site/jacoco/
+            target/surefire-reports/
+          retention-days: 30
+
+      - name: 💬 Commenter la PR avec les résultats
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            let reportContent = '';
+
+            if (fs.existsSync('test-report.md')) {
+              reportContent = fs.readFileSync('test-report.md', 'utf8');
+            } else {
+              reportContent = '## 🧪 Rapport de Tests\n\n⚠️ Impossible de générer le rapport';
+            }
+
+            reportContent += '\n\n---\n';
+            reportContent += `🔍 Commit: \`${context.sha.substring(0, 7)}\`\n`;
+            reportContent += `⏰ Analysé le: ${new Date().toLocaleString('fr-FR')}\n`;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: reportContent
+            });
+
   call-ai-review:
     name: 📊 Analyse IA du code Java
+    needs: test-coverage
     permissions:
       contents: read
       pull-requests: write
