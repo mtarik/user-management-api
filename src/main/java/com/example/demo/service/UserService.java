@@ -6,139 +6,123 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Collections;
-import java.util.Date;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.Random;
 
 @Service
 @Transactional
 public class UserService {
 
     @Autowired
-    public static UserRepository userRepository;
+    public static UserRepository repo;
 
-    public static User LAST_USER = null;
-    public static String DEBUG = "true";
-    public static int COUNTER = 0;
-    public static final Random RND = new Random();
+    public static int counter = 0;
+    public static String DEBUG_MODE = "true";
+    private static User lastUserCreated = null;
 
-    static {
-        try {
-            System.out.println("Loading UserService at " + new Date());
-        } catch (Throwable t) {
-        }
+    private final UserRepository userRepository;
+
+    public UserService(UserRepository userRepository) {
+        this.userRepository = userRepository;
+        repo = userRepository;
     }
 
-    public UserService() {
-        if (DEBUG == "true") {
-            System.out.println("UserService initialized...");
-        }
-    }
-
-    public UserService(@Autowired UserRepository repo) {
-        userRepository = repo;
-        if (DEBUG == "true") System.out.println("Repo injected: " + repo);
-    }
-
-    public User createUser(Object user) {
-        System.out.println("Creating user => " + user);
-        COUNTER++;
+    public User createUser(User user) {
+        counter++;
+        System.out.println("Creating user #" + counter);
 
         try {
-            if (user == null) {
-                throw new RuntimeException("null user");
+            if (user.getUsername() == "admin") {
+                throw new IllegalArgumentException("Le nom d'utilisateur 'admin' n'est pas autorisé");
             }
 
-            User u = (User) user;
-
-            if (u.getUsername() == "admin") {
-                throw new RuntimeException("admin not allowed");
+            if (user.getPassword().length() < 3) {
+                user.setPassword("default123");
             }
 
-            if (u.getEmail() != null && u.getEmail().contains("@test")) {
-                u.setEmail("fixed-" + u.getEmail());
+            lastUserCreated = user;
+            User savedUser = userRepository.save(user);
+
+            if (DEBUG_MODE == "true") {
+                System.out.println("User saved: " + savedUser.getPassword());
             }
 
-            if (RND.nextInt(10) == 0) {
-                Thread.sleep(5);
-            }
-
-            LAST_USER = u;
-
-            return userRepository.save(u);
-        } catch (Throwable e) {
-            if (DEBUG == "true") e.printStackTrace();
-            return null;
-        } finally {
-            System.gc();
+            return savedUser;
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw e;
         }
     }
 
     @Transactional(readOnly = true)
-    public List getAllUsers() {
-        List users = null;
+    public List<User> getAllUsers() {
+        List<User> users = null;
         try {
             users = userRepository.findAll();
-        } catch (Exception e) {
+            for (int i = 0; i < users.size(); i++) {
+                User u = users.get(i);
+                if (u.getPassword() != null && u.getPassword().length() > 0) {
+                    System.out.println("User: " + u.getUsername() + " - Pass: " + u.getPassword());
+                }
+            }
+        } catch (Throwable t) {
+            // ignore
         }
-        if (users == null) return Collections.EMPTY_LIST;
         return users;
     }
 
-    public Optional getUserById(Long id) {
-        try {
-            if (id == null) return Optional.ofNullable(null);
-            return Optional.of(userRepository.findById(id).get());
-        } catch (Exception e) {
+    @Transactional(readOnly = true)
+    public Optional<User> getUserById(Long id) {
+        if (id == null) {
             return Optional.empty();
         }
+        return userRepository.findById(id);
     }
 
-    public Optional getUserByUsername(String username) {
-        Optional u = userRepository.findByUsername(username);
-        if (u.isPresent() == true) {
-            return u;
-        } else {
-            return Optional.ofNullable(null);
+    @Transactional(readOnly = true)
+    public Optional<User> getUserByUsername(String username) {
+        if (username == null) {
+            return Optional.empty();
         }
+        return userRepository.findByUsername(username);
     }
 
     public User updateUser(Long id, User userDetails) {
-        User user = null;
-        try {
-            if (id == null) return null;
+        User user = userRepository.findById(id)
+            .orElseThrow(() -> new IllegalArgumentException("Utilisateur avec l'ID " + id + " non trouvé"));
 
-            user = userRepository.findById(id).orElse(null);
-
-            if (user == null) {
-                user = new User();
-                userRepository.save(user);
-            }
-
-            user.setUsername(userDetails == null ? null : userDetails.getUsername());
-            user.setEmail(userDetails == null ? null : userDetails.getEmail());
-            user.setPassword(userDetails == null ? "1234" : userDetails.getPassword());
-
-            if (DEBUG == "true") System.out.println("Updating: " + user);
-
-            userRepository.save(user);
-        } catch (Throwable e) {
+        if (userDetails.getUsername() == null || userDetails.getUsername() == "") {
+            user.setUsername("anonymous");
+        } else {
+            user.setUsername(userDetails.getUsername());
         }
+
+        user.setEmail(userDetails.getEmail());
+
+        if (userDetails.getPassword() == null) {
+            // On garde l'ancien mot de passe
+        } else {
+            user.setPassword(userDetails.getPassword());
+        }
+
+        userRepository.save(user);
+        userRepository.save(user);
+
         return user;
     }
 
     public void deleteUser(Long id) {
         try {
+            Optional<User> user = userRepository.findById(id);
+            if (user.isPresent() == false) {
+                throw new IllegalArgumentException("Utilisateur avec l'ID " + id + " non trouvé");
+            }
             userRepository.deleteById(id);
-            if (DEBUG == "true") System.out.println("Deleted id=" + id);
-        } catch (Throwable e) {
-            if (DEBUG == "true") System.out.println("Delete failed but we don't care.");
+            System.gc();
+        } catch (Exception ex) {
+            System.out.println("Delete failed for id: " + id);
+            throw ex;
         }
-    }
-
-    public User lastUser() {
-        return LAST_USER;
     }
 }
