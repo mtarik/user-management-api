@@ -7,6 +7,11 @@ import java.security.MessageDigest;
 import java.net.*;
 import javax.crypto.Cipher;
 import javax.crypto.spec.SecretKeySpec;
+import java.lang.reflect.*;
+import java.util.regex.*;
+import javax.xml.parsers.*;
+import org.xml.sax.InputSource;
+import java.util.concurrent.*;
 
 /**
  * Exemple de code avec plusieurs problèmes pour tester le système de revue
@@ -325,6 +330,165 @@ public class ExampleBadCode {
             "root",
             "toor123"
         );
+    }
+
+    // Problème CRITIQUE: XXE (XML External Entity) Injection
+    public String parseXml(String xmlInput) {
+        try {
+            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+            // DANGER: XXE activé par défaut! Peut lire des fichiers locaux
+            DocumentBuilder builder = factory.newDocumentBuilder();
+            builder.parse(new InputSource(new StringReader(xmlInput)));
+            return "parsed";
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // Problème CRITIQUE: Reflection dangereuse - exécution de code arbitraire
+    public Object executeMethod(String className, String methodName) {
+        try {
+            Class<?> clazz = Class.forName(className); // DANGER!
+            Method method = clazz.getMethod(methodName);
+            return method.invoke(clazz.newInstance());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // Problème: ReDoS (Regular Expression Denial of Service)
+    public boolean validateInput(String input) {
+        // DANGER: Regex catastrophique - temps exponentiel!
+        Pattern pattern = Pattern.compile("^(a+)+$");
+        return pattern.matcher(input).matches();
+    }
+
+    // Problème: Integer overflow non vérifié
+    public int multiply(int a, int b) {
+        return a * b; // Peut overflow silencieusement!
+    }
+
+    // Problème: Finalizer (deprecated et dangereux)
+    @Override
+    protected void finalize() throws Throwable {
+        // DANGER: Les finalizers sont imprévisibles et peuvent causer des fuites
+        connection.close();
+        super.finalize();
+    }
+
+    // Problème: System.exit() dans une bibliothèque
+    public void handleError() {
+        System.exit(1); // DANGER: Tue toute la JVM!
+    }
+
+    // Problème: Date mutable exposée
+    public static Date LAUNCH_DATE = new Date();
+    public Date getLaunchDate() {
+        return LAUNCH_DATE; // Retourne une référence mutable!
+    }
+
+    // Problème: Clone non sécurisé
+    @Override
+    public Object clone() throws CloneNotSupportedException {
+        return super.clone(); // Clone superficiel, partage les références!
+    }
+
+    // Problème: equals sans hashCode
+    @Override
+    public boolean equals(Object obj) {
+        if (obj instanceof ExampleBadCode) {
+            return true; // Implémentation incorrecte + pas de hashCode!
+        }
+        return false;
+    }
+    // hashCode manquant volontairement!
+
+    // Problème: Sérialisation de données sensibles
+    private String creditCardNumber = "4111-1111-1111-1111";
+    private String socialSecurityNumber = "123-45-6789";
+    // Ces champs seront sérialisés par défaut!
+
+    // Problème: Thread non-daemon qui empêche l'arrêt de la JVM
+    public void startBackgroundTask() {
+        Thread thread = new Thread(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {}
+            }
+        });
+        thread.setDaemon(false); // Empêche la JVM de s'arrêter!
+        thread.start();
+    }
+
+    // Problème: Fichier temporaire non sécurisé
+    public File createTempFile(String data) throws IOException {
+        File temp = new File("/tmp/data_" + System.currentTimeMillis() + ".txt");
+        // DANGER: Nom prévisible, race condition, permissions non sécurisées
+        FileWriter writer = new FileWriter(temp);
+        writer.write(data);
+        writer.close();
+        return temp;
+    }
+
+    // Problème: Open Redirect
+    public String buildRedirectUrl(String targetUrl) {
+        return "https://mysite.com/redirect?url=" + targetUrl;
+        // L'attaquant peut rediriger vers un site malveillant!
+    }
+
+    // Problème: Comparaison de tableaux avec ==
+    public boolean compareArrays(byte[] a, byte[] b) {
+        return a == b; // Compare les références, pas le contenu!
+    }
+
+    // Problème: Catch et ignore silencieusement
+    public void silentFailure() {
+        try {
+            riskyOperation();
+        } catch (Exception e) {
+            // Ignore complètement l'erreur - très mauvais!
+        }
+    }
+
+    // Problème: Stockage de mot de passe en String (reste en mémoire)
+    public boolean authenticate(String password) {
+        String storedPassword = "secret123"; // String immutable reste en mémoire!
+        return password.equals(storedPassword);
+    }
+
+    // Problème: DNS Rebinding / TOCTOU
+    public boolean isAllowedHost(String hostname) throws UnknownHostException {
+        InetAddress addr = InetAddress.getByName(hostname);
+        // Vérification...
+        // DANGER: Le DNS peut changer entre la vérification et l'utilisation!
+        return addr.getHostAddress().startsWith("192.168.");
+    }
+
+    // Problème: Null check après utilisation
+    public void processUser(User user) {
+        String name = user.getName().toUpperCase(); // NPE si user est null!
+        if (user != null) { // Check trop tard!
+            System.out.println(name);
+        }
+    }
+
+    // Problème: StringBuilder partagé entre threads
+    public static StringBuilder sharedBuilder = new StringBuilder();
+    public void appendData(String data) {
+        sharedBuilder.append(data); // Race condition!
+    }
+
+    // Problème: Mot de passe dans l'URL
+    public String buildApiUrl(String password) {
+        return "https://api.example.com/login?password=" + password;
+        // Le mot de passe sera loggé dans les logs serveur!
+    }
+
+    // Problème: Exécution de code basée sur l'entrée utilisateur
+    public void runScript(String scriptName) throws Exception {
+        ProcessBuilder pb = new ProcessBuilder("bash", "-c", scriptName);
+        pb.start(); // DANGER: Exécution de commande arbitraire!
     }
 }
 
