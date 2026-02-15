@@ -1,8 +1,19 @@
 # ════════════════════════════════════════════════════════════════════════════
-# 📝 Workflow de Revue de Code IA - Appelle le workflow centralisé
+# 📝 Workflow de Revue de Code IA v3.0 - Appelle le workflow centralisé
+# ════════════════════════════════════════════════════════════════════════════
+#
+# ✨ Fonctionnalités v3.0 :
+# - 📊 Scoring détaillé par catégorie (/10 avec quality labels)
+# - 🔒 Analyse OWASP Top 10 2021 structurée
+# - 🏗️ Analyse architecturale approfondie (patterns, violations, couplage)
+# - ⚡ Optimisations performance détaillées (N+1, caching, complexité)
+# - 🏷️ Auto-labelling automatique basé sur l'analyse
+# - 🚨 Système de gates (fail-on-critical) pour bloquer les merges
+# - 📈 Tracking des métriques et tendances
+#
 # ════════════════════════════════════════════════════════════════════════════
 
-name: 🤖 AI Code Review
+name: 🤖 AI Code Review v3.0
 
 on:
   # Se déclenche sur les Pull Requests
@@ -27,7 +38,7 @@ on:
 
 jobs:
   ai-code-review:
-    name: 📊 Revue de Code IA Centralisée
+    name: 📊 Revue de Code IA v3.0
     permissions:
       contents: read
       pull-requests: write
@@ -44,10 +55,11 @@ jobs:
       # Activer les analyses statiques (Checkstyle, PMD)
       enable-static-analysis: true
 
-      # Poster un commentaire sur la Pull Request
+      # Poster un commentaire sur la Pull Request avec analyse complète
       post-pr-comment: true
 
-      # Échouer le workflow si des problèmes critiques sont détectés
+      # ⚠️ IMPORTANT: Bloquer le merge si des problèmes critiques sont détectés
+      # Mettre à true après validation de la configuration
       fail-on-critical: false
 
     secrets:
