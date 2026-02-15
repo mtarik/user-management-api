@@ -113,29 +113,34 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 📥 Télécharger l'agent AI Code Review
+      - name: 📥 Checkout AI Code Review Agent
+        if: steps.changed-files.outputs.found == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: mtarik/java-ai-code-review
+          path: .ai-review-agent
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📦 Copier les scripts de l'agent
         if: steps.changed-files.outputs.found == 'true'
         run: |
-          echo "📦 Téléchargement de l'agent AI Code Review v3.0..."
+          echo "📦 Configuration de l'agent AI Code Review v3.0..."
           mkdir -p scripts/ai_reviewer/providers
 
-          # URLs brutes depuis le repository GitHub
-          BASE_URL="https://raw.githubusercontent.com/mtarik/java-ai-code-review/main"
+          # Copier les fichiers depuis le repo cloné
+          cp .ai-review-agent/scripts/ai_code_reviewer.py scripts/
+          cp .ai-review-agent/scripts/requirements.txt scripts/
+          cp .ai-review-agent/scripts/ai_reviewer/__init__.py scripts/ai_reviewer/
+          cp .ai-review-agent/scripts/ai_reviewer/models.py scripts/ai_reviewer/
+          cp .ai-review-agent/scripts/ai_reviewer/reviewer.py scripts/ai_reviewer/
+          cp .ai-review-agent/scripts/ai_reviewer/report_generator.py scripts/ai_reviewer/
+          cp .ai-review-agent/scripts/ai_reviewer/metrics.py scripts/ai_reviewer/
+          cp .ai-review-agent/scripts/ai_reviewer/providers/__init__.py scripts/ai_reviewer/providers/
+          cp .ai-review-agent/scripts/ai_reviewer/providers/base.py scripts/ai_reviewer/providers/
+          cp .ai-review-agent/scripts/ai_reviewer/providers/anthropic_provider.py scripts/ai_reviewer/providers/
+          cp .ai-review-agent/scripts/ai_reviewer/providers/system_prompt.py scripts/ai_reviewer/providers/
 
-          # Télécharger les fichiers Python
-          curl -sSL "${BASE_URL}/scripts/ai_code_reviewer.py" -o scripts/ai_code_reviewer.py
-          curl -sSL "${BASE_URL}/scripts/requirements.txt" -o scripts/requirements.txt
-          curl -sSL "${BASE_URL}/scripts/ai_reviewer/__init__.py" -o scripts/ai_reviewer/__init__.py
-          curl -sSL "${BASE_URL}/scripts/ai_reviewer/models.py" -o scripts/ai_reviewer/models.py
-          curl -sSL "${BASE_URL}/scripts/ai_reviewer/reviewer.py" -o scripts/ai_reviewer/reviewer.py
-          curl -sSL "${BASE_URL}/scripts/ai_reviewer/report_generator.py" -o scripts/ai_reviewer/report_generator.py
-          curl -sSL "${BASE_URL}/scripts/ai_reviewer/metrics.py" -o scripts/ai_reviewer/metrics.py
-          curl -sSL "${BASE_URL}/scripts/ai_reviewer/providers/__init__.py" -o scripts/ai_reviewer/providers/__init__.py
-          curl -sSL "${BASE_URL}/scripts/ai_reviewer/providers/base.py" -o scripts/ai_reviewer/providers/base.py
-          curl -sSL "${BASE_URL}/scripts/ai_reviewer/providers/anthropic_provider.py" -o scripts/ai_reviewer/providers/anthropic_provider.py
-          curl -sSL "${BASE_URL}/scripts/ai_reviewer/providers/system_prompt.py" -o scripts/ai_reviewer/providers/system_prompt.py
-
-          echo "✅ Agent téléchargé avec succès"
+          echo "✅ Agent configuré avec succès"
 
       - name: 📦 Installer les dépendances Python
         if: steps.changed-files.outputs.found == 'true'
