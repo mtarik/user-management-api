@@ -53,15 +53,9 @@ public class UserController {
      */
     @GetMapping
     public ResponseEntity<List<User>> getAllUsers() {
-        // ❌ BAD: N+1 Query - Récupère tous les users puis fait une requête par user
+        // ✅ FIXED: Removed N+1 query issue
         List<User> users = userService.getAllUsers();
-        List<User> enrichedUsers = new ArrayList<>();
-        for (User user : users) {
-            // Simule une requête additionnelle par user (N+1)
-            User fullUser = userService.getUserById(user.getId()).orElse(user);
-            enrichedUsers.add(fullUser);
-        }
-        return ResponseEntity.ok(enrichedUsers);
+        return ResponseEntity.ok(users);
     }
 
     /**
@@ -77,33 +71,35 @@ public class UserController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // ❌ BAD: SQL Injection vulnerability (OWASP A03:2021 - Injection)
-    // ❌ BAD: Pas de vérification d'autorisation (OWASP A01:2021 - Broken Access Control)
+    // ✅ FIXED: SQL Injection corrected with parameterized query
+    // ❌ STILL BAD: Pas de vérification d'autorisation (OWASP A01:2021 - Broken Access Control)
     @GetMapping("/search")
     public ResponseEntity<List<User>> searchUsers(@RequestParam String name) {
         try {
-            // SQL Injection: concaténation directe de paramètres utilisateur
-            String sql = "SELECT u FROM User u WHERE u.name = '" + name + "'";
+            // ✅ FIXED: Using parameterized query to prevent SQL injection
+            String sql = "SELECT u FROM User u WHERE u.name = :name";
             Query query = entityManager.createQuery(sql);
+            query.setParameter("name", name);
             List<User> results = query.getResultList();
             return ResponseEntity.ok(results);
         } catch (Exception e) {
-            // ❌ BAD: Exposition de détails techniques dans l'erreur
+            // ❌ STILL BAD: Exposition de détails techniques dans l'erreur
             return ResponseEntity.status(500).body(null);
         }
     }
 
-    // ❌ BAD: Accès direct à la base de données depuis le Controller
-    // ❌ BAD: Utilisation de JDBC raw au lieu de JPA
+    // ❌ STILL BAD: Accès direct à la base de données depuis le Controller
+    // ❌ STILL BAD: Utilisation de JDBC raw au lieu de JPA
     @GetMapping("/legacy/{username}")
     public ResponseEntity<User> getUserByUsername(@PathVariable String username) {
-        try {
-            // ❌ BAD: Hardcoded connection string avec credentials
-            String url = "jdbc:h2:mem:testdb";
-            Connection conn = DriverManager.getConnection(url, "sa", DB_PASSWORD);
+        // ❌ STILL BAD: Hardcoded connection string avec credentials
+        String url = "jdbc:h2:mem:testdb";
 
-            // ❌ BAD: SQL Injection via concaténation
-            Statement stmt = conn.createStatement();
+        // ✅ FIXED: Using try-with-resources to properly close connections
+        try (Connection conn = DriverManager.getConnection(url, "sa", DB_PASSWORD);
+             Statement stmt = conn.createStatement()) {
+
+            // ❌ STILL BAD: SQL Injection via concaténation (should use PreparedStatement)
             String sql = "SELECT * FROM users WHERE username = '" + username + "'";
             ResultSet rs = stmt.executeQuery(sql);
 
@@ -114,11 +110,11 @@ public class UserController {
                 return ResponseEntity.ok(user);
             }
 
-            // ❌ BAD: Pas de fermeture des ressources (resource leak)
             return ResponseEntity.notFound().build();
 
         } catch (Exception e) {
-            e.printStackTrace(); // ❌ BAD: Print stack trace
+            // ❌ STILL BAD: Print stack trace (should use logger)
+            e.printStackTrace();
             return ResponseEntity.status(500).build();
         }
     }
