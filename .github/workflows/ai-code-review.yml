@@ -119,7 +119,7 @@ jobs:
         with:
           repository: mtarik/java-ai-code-review
           path: .ai-review-agent
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.PAT_GITHUB_TOKEN }}
 
       - name: 📦 Copier les scripts de l'agent
         if: steps.changed-files.outputs.found == 'true'
