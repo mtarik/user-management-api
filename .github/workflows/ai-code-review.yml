@@ -1,5 +1,5 @@
 # ════════════════════════════════════════════════════════════════════════════
-# 📝 Workflow de Revue de Code IA v3.0 - Appelle le workflow centralisé
+# 📝 Workflow de Revue de Code IA v3.0 - Standalone Version
 # ════════════════════════════════════════════════════════════════════════════
 #
 # ✨ Fonctionnalités v3.0 :
@@ -39,31 +39,340 @@ on:
 jobs:
   ai-code-review:
     name: 📊 Revue de Code IA v3.0
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
       issues: write
-    uses: mtarik/java-ai-code-review/.github/workflows/reusable-ai-review.yml@main
 
-    with:
-      # Version de Java (17, 11, 8, etc.)
-      java-version: '17'
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # Outil de build: 'auto', 'maven', ou 'gradle'
-      build-tool: 'auto'
+      - name: ☕ Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-      # Activer les analyses statiques (Checkstyle, PMD)
-      enable-static-analysis: true
+      - name: 📦 Cache Maven packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
 
-      # Poster un commentaire sur la Pull Request avec analyse complète
-      post-pr-comment: true
+      - name: 🔍 Identifier les fichiers Java modifiés
+        id: changed-files
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | grep '\.java$' > changed_files.txt || true
+          else
+            git diff --name-only HEAD~1 HEAD | grep '\.java$' > changed_files.txt || true
+          fi
 
-      # ⚠️ IMPORTANT: Bloquer le merge si des problèmes critiques sont détectés
-      # Mettre à true après validation de la configuration
-      fail-on-critical: false
+          if [ -s changed_files.txt ]; then
+            echo "found=true" >> $GITHUB_OUTPUT
+            echo "📝 Fichiers Java modifiés :"
+            cat changed_files.txt
+          else
+            echo "found=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ Aucun fichier Java modifié"
+          fi
 
-    secrets:
-      # La clé API Anthropic doit être configurée dans les secrets du repository
-      # Settings → Secrets and variables → Actions → New repository secret
-      # Nom: ANTHROPIC_API_KEY
-      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      - name: ☕ Compilation du projet Java
+        if: steps.changed-files.outputs.found == 'true'
+        run: |
+          if [ -f "pom.xml" ]; then
+            echo "🔨 Compilation avec Maven..."
+            mvn clean compile -B -q || echo "⚠️ Avertissement: Erreur de compilation"
+          elif [ -f "build.gradle" ]; then
+            echo "🔨 Compilation avec Gradle..."
+            ./gradlew compileJava -q || echo "⚠️ Avertissement: Erreur de compilation"
+          else
+            echo "ℹ️ Aucun système de build détecté"
+          fi
+        continue-on-error: true
+
+      - name: 🔍 Analyse statique (Checkstyle, PMD)
+        if: steps.changed-files.outputs.found == 'true'
+        run: |
+          if [ -f "pom.xml" ]; then
+            echo "📋 Exécution de Checkstyle..."
+            mvn checkstyle:check || echo "⚠️ Problèmes Checkstyle détectés"
+            echo "🔍 Exécution de PMD..."
+            mvn pmd:check || echo "⚠️ Problèmes PMD détectés"
+          fi
+        continue-on-error: true
+
+      - name: 🐍 Setup Python
+        if: steps.changed-files.outputs.found == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📥 Télécharger l'agent AI Code Review
+        if: steps.changed-files.outputs.found == 'true'
+        run: |
+          echo "📦 Téléchargement de l'agent AI Code Review v3.0..."
+          mkdir -p scripts/ai_reviewer/providers
+
+          # URLs brutes depuis le repository GitHub
+          BASE_URL="https://raw.githubusercontent.com/mtarik/java-ai-code-review/main"
+
+          # Télécharger les fichiers Python
+          curl -sSL "${BASE_URL}/scripts/ai_code_reviewer.py" -o scripts/ai_code_reviewer.py
+          curl -sSL "${BASE_URL}/scripts/requirements.txt" -o scripts/requirements.txt
+          curl -sSL "${BASE_URL}/scripts/ai_reviewer/__init__.py" -o scripts/ai_reviewer/__init__.py
+          curl -sSL "${BASE_URL}/scripts/ai_reviewer/models.py" -o scripts/ai_reviewer/models.py
+          curl -sSL "${BASE_URL}/scripts/ai_reviewer/reviewer.py" -o scripts/ai_reviewer/reviewer.py
+          curl -sSL "${BASE_URL}/scripts/ai_reviewer/report_generator.py" -o scripts/ai_reviewer/report_generator.py
+          curl -sSL "${BASE_URL}/scripts/ai_reviewer/metrics.py" -o scripts/ai_reviewer/metrics.py
+          curl -sSL "${BASE_URL}/scripts/ai_reviewer/providers/__init__.py" -o scripts/ai_reviewer/providers/__init__.py
+          curl -sSL "${BASE_URL}/scripts/ai_reviewer/providers/base.py" -o scripts/ai_reviewer/providers/base.py
+          curl -sSL "${BASE_URL}/scripts/ai_reviewer/providers/anthropic_provider.py" -o scripts/ai_reviewer/providers/anthropic_provider.py
+          curl -sSL "${BASE_URL}/scripts/ai_reviewer/providers/system_prompt.py" -o scripts/ai_reviewer/providers/system_prompt.py
+
+          echo "✅ Agent téléchargé avec succès"
+
+      - name: 📦 Installer les dépendances Python
+        if: steps.changed-files.outputs.found == 'true'
+        run: |
+          pip install -r scripts/requirements.txt
+
+      - name: 🤖 Analyse IA avec Claude Sonnet 4.5
+        if: steps.changed-files.outputs.found == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO_NAME: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          echo "🧠 Lancement de l'analyse IA v3.0..."
+          python scripts/ai_code_reviewer.py
+
+      - name: 📊 Upload du rapport d'analyse
+        if: always() && steps.changed-files.outputs.found == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-review-report-${{ github.sha }}
+          path: |
+            code_review_*.md
+            code_review_*.json
+            review_report.json
+            review_report.md
+            metrics_report.md
+          retention-days: 30
+
+      - name: 💬 Commenter la Pull Request
+        if: github.event_name == 'pull_request' && steps.changed-files.outputs.found == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            // Lire le rapport Markdown
+            let reportContent = '## 🤖 Revue de Code IA v3.0 - Résultats\n\n';
+
+            // Chercher les fichiers de rapport
+            const files = fs.readdirSync('.');
+            const mdFile = files.find(f => f.startsWith('code_review_') && f.endsWith('.md'));
+
+            if (mdFile && fs.existsSync(mdFile)) {
+              reportContent += fs.readFileSync(mdFile, 'utf8');
+            } else {
+              reportContent += '✅ Analyse terminée. Aucun problème majeur détecté.';
+            }
+
+            // Ajouter un footer
+            reportContent += '\n\n---\n';
+            reportContent += `🔍 Commit: \`${context.sha.substring(0, 7)}\`\n`;
+            reportContent += `⏰ Analysé le: ${new Date().toLocaleString('fr-FR')}\n`;
+            reportContent += `🤖 Propulsé par Claude Sonnet 4.5 • AI Code Review v3.0`;
+
+            // Poster le commentaire
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: reportContent
+            });
+
+      - name: 🏷️ Auto-labelling de la PR
+        if: github.event_name == 'pull_request' && steps.changed-files.outputs.found == 'true'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+
+            // Trouver le fichier JSON de revue
+            const files = fs.readdirSync('.');
+            const jsonFile = files.find(f => f.startsWith('code_review_') && f.endsWith('.json'));
+
+            if (!jsonFile) {
+              console.log('⚠️ Aucun rapport JSON trouvé pour l\'auto-labelling');
+              return;
+            }
+
+            const review = JSON.parse(fs.readFileSync(jsonFile, 'utf8'));
+            const labels = new Set();
+
+            // Analyser les issues pour déterminer les labels
+            let criticalCount = 0;
+            let securityCount = 0;
+            let performanceCount = 0;
+            let architectureCount = 0;
+
+            review.files?.forEach(file => {
+              file.issues?.forEach(issue => {
+                if (issue.severity === 'critical') {
+                  criticalCount++;
+                  labels.add('ai-review:critical');
+                }
+
+                const category = issue.category?.toLowerCase() || '';
+                if (category.includes('security') || category.includes('sécurité')) {
+                  securityCount++;
+                  labels.add('ai-review:security');
+                } else if (category.includes('performance')) {
+                  performanceCount++;
+                  labels.add('ai-review:performance');
+                } else if (category.includes('architecture')) {
+                  architectureCount++;
+                  labels.add('ai-review:architecture');
+                }
+
+                // Labels OWASP si applicable
+                if (issue.owasp_category) {
+                  labels.add('ai-review:owasp');
+                }
+              });
+            });
+
+            // Ajouter un label de score basé sur overall_score (0-10)
+            const score = review.overall_score || 0;
+            if (score >= 9) {
+              labels.add('ai-review:excellent');
+            } else if (score >= 7) {
+              labels.add('ai-review:good');
+            } else if (score >= 5) {
+              labels.add('ai-review:acceptable');
+            } else {
+              labels.add('ai-review:needs-work');
+            }
+
+            // Label de qualité
+            if (review.quality_label) {
+              labels.add(`quality:${review.quality_label.toLowerCase().replace(/\s+/g, '-')}`);
+            }
+
+            console.log(`📊 Analyse: ${criticalCount} critiques, ${securityCount} sécurité, ${performanceCount} performance, ${architectureCount} architecture`);
+            console.log(`🏷️ Labels à ajouter: ${Array.from(labels).join(', ')}`);
+
+            // Définir les couleurs des labels
+            const labelColors = {
+              'ai-review:critical': 'b60205',
+              'ai-review:security': 'd93f0b',
+              'ai-review:owasp': 'c5def5',
+              'ai-review:performance': 'fbca04',
+              'ai-review:architecture': '0e8a16',
+              'ai-review:excellent': '0e8a16',
+              'ai-review:good': 'a2eeef',
+              'ai-review:acceptable': 'fbca04',
+              'ai-review:needs-work': 'd93f0b',
+              'quality:excellent-code-review': '0e8a16',
+              'quality:good-code-review': 'a2eeef',
+              'quality:acceptable-code-review': 'fbca04',
+              'quality:needs-work': 'd93f0b'
+            };
+
+            const labelDescriptions = {
+              'ai-review:critical': 'Problèmes critiques détectés par IA',
+              'ai-review:security': 'Problèmes de sécurité détectés',
+              'ai-review:owasp': 'Vulnérabilités OWASP Top 10',
+              'ai-review:performance': 'Optimisations de performance suggérées',
+              'ai-review:architecture': 'Problèmes architecturaux',
+              'ai-review:excellent': 'Score IA excellent (9-10/10)',
+              'ai-review:good': 'Bon score IA (7-8/10)',
+              'ai-review:acceptable': 'Score IA acceptable (5-6/10)',
+              'ai-review:needs-work': 'Nécessite du travail (0-4/10)',
+              'quality:excellent-code-review': 'Qualité excellente',
+              'quality:good-code-review': 'Bonne qualité',
+              'quality:acceptable-code-review': 'Qualité acceptable',
+              'quality:needs-work': 'Qualité à améliorer'
+            };
+
+            // Récupérer les labels existants du repo
+            let existingLabels = [];
+            try {
+              const response = await github.rest.issues.listLabelsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100
+              });
+              existingLabels = response.data.map(l => l.name);
+            } catch (error) {
+              console.log('⚠️ Erreur lors de la récupération des labels:', error.message);
+            }
+
+            // Créer les labels manquants
+            for (const label of labels) {
+              if (!existingLabels.includes(label)) {
+                try {
+                  await github.rest.issues.createLabel({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    name: label,
+                    color: labelColors[label] || 'ededed',
+                    description: labelDescriptions[label] || 'Auto-généré par AI Code Review'
+                  });
+                  console.log(`✅ Label créé: ${label}`);
+                } catch (error) {
+                  if (error.status !== 422) {
+                    console.log(`⚠️ Impossible de créer le label ${label}:`, error.message);
+                  }
+                }
+              }
+            }
+
+            // Appliquer les labels à la PR
+            if (labels.size > 0) {
+              try {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  labels: Array.from(labels)
+                });
+                console.log(`✅ ${labels.size} label(s) ajouté(s) à la PR`);
+              } catch (error) {
+                console.log('⚠️ Erreur lors de l\'ajout des labels:', error.message);
+              }
+            } else {
+              console.log('ℹ️ Aucun label à ajouter');
+            }
+
+      - name: ✅ Résumé de l'analyse
+        if: always()
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📊 RÉSUMÉ DE L'ANALYSE IA v3.0"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          if [ "${{ steps.changed-files.outputs.found }}" == "true" ]; then
+            if ls code_review_*.json 1> /dev/null 2>&1; then
+              echo "✅ Revue de code terminée avec succès"
+              echo "📁 Rapport disponible dans les artefacts"
+            else
+              echo "⚠️ Aucun rapport généré"
+            fi
+          else
+            echo "ℹ️ Aucun fichier Java à analyser"
+          fi
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
