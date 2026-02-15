@@ -4,6 +4,7 @@ import com.example.demo.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -43,4 +44,12 @@ public interface UserRepository extends JpaRepository<User, Long> {
      * @return true si l'utilisateur existe
      */
     boolean existsByEmail(String email);
+
+    /**
+     * Recherche des utilisateurs dont le nom contient la chaîne spécifiée (insensible à la casse).
+     *
+     * @param name le nom à rechercher
+     * @return la liste des utilisateurs correspondants
+     */
+    List<User> findByNameContainingIgnoreCase(String name);
 }

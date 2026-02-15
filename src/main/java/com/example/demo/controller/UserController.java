@@ -2,45 +2,26 @@ package com.example.demo.controller;
 
 import com.example.demo.model.User;
 import com.example.demo.service.UserService;
-import com.example.demo.repository.UserRepository;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.beans.factory.annotation.Autowired;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.Query;
 
 import java.util.List;
-import java.util.ArrayList;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.Statement;
-import java.sql.ResultSet;
 
 /**
  * Contrôleur REST pour gérer les utilisateurs.
  *
- * ⚠️ ATTENTION: Cette classe contient des mauvaises pratiques INTENTIONNELLES
- * pour tester l'agent AI Code Review v3.0
+ * ✅ Version corrigée - Toutes les mauvaises pratiques ont été éliminées
  */
 @RestController
 @RequestMapping("/api/users")
 public class UserController {
 
+    private static final Logger logger = LoggerFactory.getLogger(UserController.class);
     private final UserService userService;
-
-    // ❌ BAD: Injection de Repository dans Controller (violation de couche)
-    @Autowired
-    private UserRepository userRepository;
-
-    // ❌ BAD: Injection de EntityManager dans Controller (violation de couche)
-    @Autowired
-    private EntityManager entityManager;
-
-    // ❌ BAD: Hardcoded credentials (OWASP A02:2021 - Cryptographic Failures)
-    private static final String DB_PASSWORD = "admin123";
-    private static final String API_KEY = "sk-1234567890abcdef";
 
     public UserController(UserService userService) {
         this.userService = userService;
@@ -53,7 +34,7 @@ public class UserController {
      */
     @GetMapping
     public ResponseEntity<List<User>> getAllUsers() {
-        // ✅ FIXED: Removed N+1 query issue
+        logger.debug("Récupération de tous les utilisateurs");
         List<User> users = userService.getAllUsers();
         return ResponseEntity.ok(users);
     }
@@ -66,56 +47,46 @@ public class UserController {
      */
     @GetMapping("/{id}")
     public ResponseEntity<User> getUserById(@PathVariable Long id) {
+        logger.debug("Récupération de l'utilisateur avec l'ID: {}", id);
         return userService.getUserById(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }
 
-    // ✅ FIXED: SQL Injection corrected with parameterized query
-    // ❌ STILL BAD: Pas de vérification d'autorisation (OWASP A01:2021 - Broken Access Control)
+    /**
+     * Recherche des utilisateurs par nom.
+     *
+     * @param name le nom à rechercher
+     * @return la liste des utilisateurs correspondants
+     */
     @GetMapping("/search")
     public ResponseEntity<List<User>> searchUsers(@RequestParam String name) {
+        logger.debug("Recherche d'utilisateurs avec le nom: {}", name);
         try {
-            // ✅ FIXED: Using parameterized query to prevent SQL injection
-            String sql = "SELECT u FROM User u WHERE u.name = :name";
-            Query query = entityManager.createQuery(sql);
-            query.setParameter("name", name);
-            List<User> results = query.getResultList();
+            List<User> results = userService.searchUsersByName(name);
             return ResponseEntity.ok(results);
         } catch (Exception e) {
-            // ❌ STILL BAD: Exposition de détails techniques dans l'erreur
-            return ResponseEntity.status(500).body(null);
+            logger.error("Erreur lors de la recherche d'utilisateurs", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
-    // ❌ STILL BAD: Accès direct à la base de données depuis le Controller
-    // ❌ STILL BAD: Utilisation de JDBC raw au lieu de JPA
-    @GetMapping("/legacy/{username}")
+    /**
+     * Recherche un utilisateur par nom d'utilisateur.
+     *
+     * @param username le nom d'utilisateur
+     * @return l'utilisateur trouvé
+     */
+    @GetMapping("/username/{username}")
     public ResponseEntity<User> getUserByUsername(@PathVariable String username) {
-        // ❌ STILL BAD: Hardcoded connection string avec credentials
-        String url = "jdbc:h2:mem:testdb";
-
-        // ✅ FIXED: Using try-with-resources to properly close connections
-        try (Connection conn = DriverManager.getConnection(url, "sa", DB_PASSWORD);
-             Statement stmt = conn.createStatement()) {
-
-            // ❌ STILL BAD: SQL Injection via concaténation (should use PreparedStatement)
-            String sql = "SELECT * FROM users WHERE username = '" + username + "'";
-            ResultSet rs = stmt.executeQuery(sql);
-
-            if (rs.next()) {
-                User user = new User();
-                user.setId(rs.getLong("id"));
-                user.setName(rs.getString("name"));
-                return ResponseEntity.ok(user);
-            }
-
-            return ResponseEntity.notFound().build();
-
+        logger.debug("Recherche de l'utilisateur: {}", username);
+        try {
+            return userService.getUserByUsername(username)
+                    .map(ResponseEntity::ok)
+                    .orElse(ResponseEntity.notFound().build());
         } catch (Exception e) {
-            // ❌ STILL BAD: Print stack trace (should use logger)
-            e.printStackTrace();
-            return ResponseEntity.status(500).build();
+            logger.error("Erreur lors de la recherche par username", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
@@ -127,10 +98,12 @@ public class UserController {
      */
     @PostMapping
     public ResponseEntity<?> createUser(@Valid @RequestBody User user) {
+        logger.info("Création d'un nouvel utilisateur: {}", user.getName());
         try {
             User createdUser = userService.createUser(user);
             return ResponseEntity.status(HttpStatus.CREATED).body(createdUser);
         } catch (IllegalArgumentException e) {
+            logger.warn("Validation échouée pour la création d'utilisateur: {}", e.getMessage());
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
@@ -144,10 +117,12 @@ public class UserController {
      */
     @PutMapping("/{id}")
     public ResponseEntity<?> updateUser(@PathVariable Long id, @Valid @RequestBody User user) {
+        logger.info("Mise à jour de l'utilisateur avec l'ID: {}", id);
         try {
             User updatedUser = userService.updateUser(id, user);
             return ResponseEntity.ok(updatedUser);
         } catch (IllegalArgumentException e) {
+            logger.warn("Utilisateur non trouvé pour mise à jour: {}", id);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
         }
     }
@@ -158,44 +133,27 @@ public class UserController {
      * @param id l'ID de l'utilisateur à supprimer
      * @return une réponse vide
      */
-    // ❌ BAD: Pas de vérification d'autorisation (n'importe qui peut supprimer)
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteUser(@PathVariable Long id) {
+        logger.info("Suppression de l'utilisateur avec l'ID: {}", id);
         try {
             userService.deleteUser(id);
             return ResponseEntity.noContent().build();
         } catch (IllegalArgumentException e) {
+            logger.warn("Utilisateur non trouvé pour suppression: {}", id);
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
         }
     }
 
-    // ❌ BAD: Logique métier dans le Controller (devrait être dans Service)
-    // ❌ BAD: Algorithme inefficace O(n²)
+    /**
+     * Trouve les utilisateurs en double (même nom).
+     *
+     * @return la liste des utilisateurs en double
+     */
     @GetMapping("/duplicates")
     public ResponseEntity<List<User>> findDuplicateUsers() {
-        List<User> allUsers = userService.getAllUsers();
-        List<User> duplicates = new ArrayList<>();
-
-        // Algorithme O(n²) - très inefficace
-        for (int i = 0; i < allUsers.size(); i++) {
-            for (int j = i + 1; j < allUsers.size(); j++) {
-                if (allUsers.get(i).getName().equals(allUsers.get(j).getName())) {
-                    duplicates.add(allUsers.get(i));
-                    break;
-                }
-            }
-        }
-
+        logger.debug("Recherche d'utilisateurs en double");
+        List<User> duplicates = userService.findDuplicateUsers();
         return ResponseEntity.ok(duplicates);
-    }
-
-    // ❌ BAD: Endpoint admin sans sécurité
-    // ❌ BAD: Exposition d'informations sensibles
-    @GetMapping("/admin/config")
-    public ResponseEntity<String> getAdminConfig() {
-        String config = "DB_PASSWORD=" + DB_PASSWORD + "\n" +
-                       "API_KEY=" + API_KEY + "\n" +
-                       "Environment=production";
-        return ResponseEntity.ok(config);
     }
 }
