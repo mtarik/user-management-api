@@ -127,20 +127,14 @@ jobs:
           echo "📦 Configuration de l'agent AI Code Review v3.0..."
           mkdir -p scripts/ai_reviewer/providers
 
-          # Copier les fichiers depuis le repo cloné
+          # Copier tous les fichiers depuis le repo cloné
           cp .ai-review-agent/scripts/ai_code_reviewer.py scripts/
           cp .ai-review-agent/scripts/requirements.txt scripts/
-          cp .ai-review-agent/scripts/ai_reviewer/__init__.py scripts/ai_reviewer/
-          cp .ai-review-agent/scripts/ai_reviewer/models.py scripts/ai_reviewer/
-          cp .ai-review-agent/scripts/ai_reviewer/reviewer.py scripts/ai_reviewer/
-          cp .ai-review-agent/scripts/ai_reviewer/report_generator.py scripts/ai_reviewer/
-          cp .ai-review-agent/scripts/ai_reviewer/metrics.py scripts/ai_reviewer/
-          cp .ai-review-agent/scripts/ai_reviewer/providers/__init__.py scripts/ai_reviewer/providers/
-          cp .ai-review-agent/scripts/ai_reviewer/providers/base.py scripts/ai_reviewer/providers/
-          cp .ai-review-agent/scripts/ai_reviewer/providers/anthropic_provider.py scripts/ai_reviewer/providers/
-          cp .ai-review-agent/scripts/ai_reviewer/providers/system_prompt.py scripts/ai_reviewer/providers/
+          cp -r .ai-review-agent/scripts/ai_reviewer/* scripts/ai_reviewer/
 
           echo "✅ Agent configuré avec succès"
+          echo "📁 Fichiers copiés :"
+          ls -la scripts/ai_reviewer/providers/
 
       - name: 📦 Installer les dépendances Python
         if: steps.changed-files.outputs.found == 'true'
