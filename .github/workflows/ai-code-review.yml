@@ -338,6 +338,54 @@ jobs:
               labels.add(`quality:${review.quality_label.toLowerCase().replace(/\s+/g, '-')}`);
             }
 
+            // ✨ NOUVEAUX LABELS MÉTRIQUES DÉTAILLÉS
+
+            // Label de score exact
+            labels.add(`score: ${Math.round(score)}/10`);
+
+            // Labels de compteurs d'issues
+            const totalIssues = review.files?.reduce((sum, file) => sum + (file.issues?.length || 0), 0) || 0;
+            if (totalIssues > 0) {
+              labels.add(`issues: ${totalIssues}`);
+            }
+
+            // Labels de sévérité avec compteurs
+            if (criticalCount > 0) labels.add(`critical: ${criticalCount}`);
+
+            const highCount = review.files?.reduce((sum, file) =>
+              sum + (file.issues?.filter(i => i.severity === 'high').length || 0), 0) || 0;
+            if (highCount > 0) labels.add(`high: ${highCount}`);
+
+            const mediumCount = review.files?.reduce((sum, file) =>
+              sum + (file.issues?.filter(i => i.severity === 'medium').length || 0), 0) || 0;
+            if (mediumCount > 0) labels.add(`medium: ${mediumCount}`);
+
+            // Labels de catégories avec compteurs
+            if (securityCount > 0) labels.add(`security: ${securityCount}`);
+            if (performanceCount > 0) labels.add(`performance: ${performanceCount}`);
+            if (architectureCount > 0) labels.add(`architecture: ${architectureCount}`);
+
+            // Compter les issues OWASP
+            const owaspCount = review.files?.reduce((sum, file) =>
+              sum + (file.issues?.filter(i => i.owasp_category).length || 0), 0) || 0;
+            if (owaspCount > 0) labels.add(`owasp: ${owaspCount}`);
+
+            // Labels de score par catégorie (si disponibles)
+            if (review.scores) {
+              if (review.scores.security !== undefined) {
+                labels.add(`security-score: ${Math.round(review.scores.security)}/10`);
+              }
+              if (review.scores.performance !== undefined) {
+                labels.add(`performance-score: ${Math.round(review.scores.performance)}/10`);
+              }
+              if (review.scores.architecture !== undefined) {
+                labels.add(`architecture-score: ${Math.round(review.scores.architecture)}/10`);
+              }
+              if (review.scores.code_quality !== undefined) {
+                labels.add(`quality-score: ${Math.round(review.scores.code_quality)}/10`);
+              }
+            }
+
             console.log(`📊 Analyse: ${criticalCount} critiques, ${securityCount} sécurité, ${performanceCount} performance, ${architectureCount} architecture`);
             console.log(`🏷️ Labels à ajouter: ${Array.from(labels).join(', ')}`);
 
@@ -355,7 +403,19 @@ jobs:
               'quality:excellent-code-review': '0e8a16',
               'quality:good-code-review': 'a2eeef',
               'quality:acceptable-code-review': 'fbca04',
-              'quality:needs-work': 'd93f0b'
+              'quality:needs-work': 'd93f0b',
+              // Couleurs pour les labels métriques
+              'score: 0/10': 'b60205',
+              'score: 1/10': 'b60205',
+              'score: 2/10': 'd93f0b',
+              'score: 3/10': 'd93f0b',
+              'score: 4/10': 'e99695',
+              'score: 5/10': 'fbca04',
+              'score: 6/10': 'fbca04',
+              'score: 7/10': 'bfe5bf',
+              'score: 8/10': '5cb85c',
+              'score: 9/10': '0e8a16',
+              'score: 10/10': '0e8a16'
             };
 
             const labelDescriptions = {
@@ -373,6 +433,31 @@ jobs:
               'quality:acceptable-code-review': 'Qualité acceptable',
               'quality:needs-work': 'Qualité à améliorer'
             };
+
+            // Ajouter des descriptions pour les labels métriques
+            labels.forEach(label => {
+              if (label.startsWith('score:') && !labelDescriptions[label]) {
+                labelDescriptions[label] = 'Score global de la revue IA';
+              } else if (label.startsWith('issues:')) {
+                labelDescriptions[label] = 'Nombre total de problèmes détectés';
+              } else if (label.startsWith('critical:')) {
+                labelDescriptions[label] = 'Nombre de problèmes critiques';
+              } else if (label.startsWith('high:')) {
+                labelDescriptions[label] = 'Nombre de problèmes haute priorité';
+              } else if (label.startsWith('medium:')) {
+                labelDescriptions[label] = 'Nombre de problèmes moyenne priorité';
+              } else if (label.startsWith('security:') && !label.includes('score')) {
+                labelDescriptions[label] = 'Nombre de problèmes de sécurité';
+              } else if (label.startsWith('performance:') && !label.includes('score')) {
+                labelDescriptions[label] = 'Nombre de problèmes de performance';
+              } else if (label.startsWith('architecture:') && !label.includes('score')) {
+                labelDescriptions[label] = 'Nombre de problèmes architecturaux';
+              } else if (label.startsWith('owasp:')) {
+                labelDescriptions[label] = 'Nombre de vulnérabilités OWASP';
+              } else if (label.includes('-score:')) {
+                labelDescriptions[label] = `Score ${label.split('-')[0]} détaillé`;
+              }
+            });
 
             // Récupérer les labels existants du repo
             let existingLabels = [];
