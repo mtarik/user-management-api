@@ -231,11 +231,22 @@ jobs:
                 commentBody += `---\n🤖 *Détecté par Claude Sonnet 4.5 - AI Code Review v3.0*`;
 
                 // Ajouter le commentaire inline
-                reviewComments.push({
-                  path: file.file_path,
-                  line: issue.line_number || 1,
-                  body: commentBody
-                });
+                // Utiliser le format correct pour les commentaires sur PR
+                const comment = {
+                  path: file.file_path || file.path,  // Support both field names
+                  body: commentBody,
+                  side: 'RIGHT'  // RIGHT = nouvelle version du fichier
+                };
+
+                // Utiliser line pour les commentaires inline
+                if (issue.line) {
+                  comment.line = issue.line;
+                } else {
+                  // Si pas de ligne spécifique, commenter la première ligne
+                  comment.line = 1;
+                }
+
+                reviewComments.push(comment);
               });
             });
 
