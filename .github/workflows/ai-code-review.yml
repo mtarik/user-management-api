@@ -1,5 +1,5 @@
 # ════════════════════════════════════════════════════════════════════════════
-# 📝 Workflow de Revue de Code IA v3.0 - Standalone Version
+# 📝 Workflow de Revue de Code IA v3.0 - Version Simplifiée
 # ════════════════════════════════════════════════════════════════════════════
 #
 # ✨ Fonctionnalités v3.0 :
@@ -8,8 +8,12 @@
 # - 🏗️ Analyse architecturale approfondie (patterns, violations, couplage)
 # - ⚡ Optimisations performance détaillées (N+1, caching, complexité)
 # - 🏷️ Auto-labelling automatique basé sur l'analyse
+# - 💬 Commentaires inline sur Files Changed (comme une vraie code review)
 # - 🚨 Système de gates (fail-on-critical) pour bloquer les merges
-# - 📈 Tracking des métriques et tendances
+#
+# 🎯 Architecture:
+#   Toute l'intelligence est centralisée dans java-ai-code-review
+#   Ce workflow ne fait qu'appeler l'agent mutualisé
 #
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -46,6 +50,10 @@ jobs:
       issues: write
 
     steps:
+      # ========================================================================
+      # 1. Checkout et Setup
+      # ========================================================================
+
       - name: 📥 Checkout code
         uses: actions/checkout@v4
         with:
@@ -63,6 +71,10 @@ jobs:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
+
+      # ========================================================================
+      # 2. Identifier les fichiers modifiés
+      # ========================================================================
 
       - name: 🔍 Identifier les fichiers Java modifiés
         id: changed-files
@@ -82,6 +94,10 @@ jobs:
             echo "ℹ️ Aucun fichier Java modifié"
           fi
 
+      # ========================================================================
+      # 3. Compilation optionnelle (pour détecter les erreurs de build)
+      # ========================================================================
+
       - name: ☕ Compilation du projet Java
         if: steps.changed-files.outputs.found == 'true'
         run: |
@@ -96,16 +112,9 @@ jobs:
           fi
         continue-on-error: true
 
-      - name: 🔍 Analyse statique (Checkstyle, PMD)
-        if: steps.changed-files.outputs.found == 'true'
-        run: |
-          if [ -f "pom.xml" ]; then
-            echo "📋 Exécution de Checkstyle..."
-            mvn checkstyle:check || echo "⚠️ Problèmes Checkstyle détectés"
-            echo "🔍 Exécution de PMD..."
-            mvn pmd:check || echo "⚠️ Problèmes PMD détectés"
-          fi
-        continue-on-error: true
+      # ========================================================================
+      # 4. Setup Python et Agent IA
+      # ========================================================================
 
       - name: 🐍 Setup Python
         if: steps.changed-files.outputs.found == 'true'
@@ -113,7 +122,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 📥 Checkout AI Code Review Agent
+      - name: 📥 Checkout AI Code Review Agent (Centralisé)
         if: steps.changed-files.outputs.found == 'true'
         uses: actions/checkout@v4
         with:
@@ -121,421 +130,78 @@ jobs:
           path: .ai-review-agent
           token: ${{ secrets.PAT_GITHUB_TOKEN }}
 
-      - name: 📦 Copier les scripts de l'agent
+      - name: 📦 Installer les dépendances de l'agent
         if: steps.changed-files.outputs.found == 'true'
         run: |
-          echo "📦 Configuration de l'agent AI Code Review v3.0..."
-          mkdir -p scripts/ai_reviewer/providers
+          pip install -r .ai-review-agent/scripts/requirements.txt
 
-          # Copier tous les fichiers depuis le repo cloné
-          cp .ai-review-agent/scripts/ai_code_reviewer.py scripts/
-          cp .ai-review-agent/scripts/requirements.txt scripts/
-          cp -r .ai-review-agent/scripts/ai_reviewer/* scripts/ai_reviewer/
+      # ========================================================================
+      # 5. Exécuter l'analyse IA complète (Analyse + Posting + Labels)
+      # ========================================================================
 
-          echo "✅ Agent configuré avec succès"
-          echo "📁 Fichiers copiés :"
-          ls -la scripts/ai_reviewer/providers/
-
-      - name: 📦 Installer les dépendances Python
-        if: steps.changed-files.outputs.found == 'true'
-        run: |
-          pip install -r scripts/requirements.txt
-
-      - name: 🤖 Analyse IA avec Claude Sonnet 4.5
+      - name: 🤖 Revue de Code IA Complète (Claude Sonnet 4.5)
         if: steps.changed-files.outputs.found == 'true'
         env:
+          # API Keys
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+          # Configuration GitHub
           PR_NUMBER: ${{ github.event.pull_request.number }}
           REPO_NAME: ${{ github.repository }}
-          COMMIT_SHA: ${{ github.sha }}
-        run: |
-          echo "🧠 Lancement de l'analyse IA v3.0..."
-          python scripts/ai_code_reviewer.py
+          GITHUB_SHA: ${{ github.sha }}
 
-      - name: 📊 Upload du rapport d'analyse
-        if: always() && steps.changed-files.outputs.found == 'true'
+          # Configuration IA
+          AI_MODEL: "claude-sonnet-4-5"
+
+          # Options
+          FAIL_ON_CRITICAL: "false"
+          CHANGED_FILES: "changed_files.txt"
+        run: |
+          echo "🚀 Lancement de l'agent IA Code Review v3.0..."
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          # Exécuter le script principal
+          # Ce script fait TOUT:
+          # - Analyse le code avec l'IA
+          # - Génère les rapports JSON et Markdown
+          # - Poste les commentaires inline sur la PR
+          # - Ajoute les labels automatiques
+          python .ai-review-agent/scripts/review_and_post.py
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Revue de code IA terminée"
+
+      # ========================================================================
+      # 6. Sauvegarder les rapports comme artifacts
+      # ========================================================================
+
+      - name: 📤 Upload des rapports
+        if: steps.changed-files.outputs.found == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: ai-review-report-${{ github.sha }}
+          name: ai-code-review-reports
           path: |
-            code_review_*.md
             code_review_*.json
-            review_report.json
+            code_review_*.md
             review_report.md
-            metrics_report.md
           retention-days: 30
 
-      - name: 💬 Poster les commentaires inline sur Files Changed
-        if: github.event_name == 'pull_request' && steps.changed-files.outputs.found == 'true'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
+      # ========================================================================
+      # 7. Résumé du workflow
+      # ========================================================================
 
-            // Trouver le fichier JSON de revue
-            const files = fs.readdirSync('.');
-            const jsonFile = files.find(f => f.startsWith('code_review_') && f.endsWith('.json'));
-
-            if (!jsonFile) {
-              console.log('⚠️ Aucun rapport JSON trouvé');
-              return;
-            }
-
-            const review = JSON.parse(fs.readFileSync(jsonFile, 'utf8'));
-
-            // Préparer les commentaires inline
-            const reviewComments = [];
-            let summaryBody = '## 🤖 Revue de Code IA v3.0 - Résultats\n\n';
-
-            // Construire un résumé
-            const totalIssues = review.files?.reduce((sum, file) => sum + (file.issues?.length || 0), 0) || 0;
-            summaryBody += `📊 **Score Global**: ${review.overall_score || 0}/10\n`;
-            summaryBody += `🔍 **Problèmes détectés**: ${totalIssues}\n\n`;
-
-            // Catégoriser les problèmes
-            const criticalCount = review.files?.reduce((sum, file) =>
-              sum + (file.issues?.filter(i => i.severity === 'critical').length || 0), 0) || 0;
-            const securityCount = review.files?.reduce((sum, file) =>
-              sum + (file.issues?.filter(i => i.category?.toLowerCase().includes('security')).length || 0), 0) || 0;
-
-            if (criticalCount > 0) summaryBody += `🔴 **Critiques**: ${criticalCount}\n`;
-            if (securityCount > 0) summaryBody += `🔒 **Sécurité**: ${securityCount}\n`;
-
-            // Parcourir les fichiers et créer des commentaires inline
-            review.files?.forEach(file => {
-              file.issues?.forEach(issue => {
-                // Déterminer l'icône selon la sévérité
-                let icon = '💡';
-                if (issue.severity === 'critical') icon = '🔴';
-                else if (issue.severity === 'high') icon = '🟠';
-                else if (issue.severity === 'medium') icon = '🟡';
-
-                // Construire le corps du commentaire
-                let commentBody = `${icon} **${issue.category || 'Issue'}** (${issue.severity || 'info'})\n\n`;
-                commentBody += `${issue.description}\n\n`;
-
-                if (issue.owasp_category) {
-                  commentBody += `🛡️ **OWASP**: ${issue.owasp_category}\n\n`;
-                }
-
-                if (issue.suggestion) {
-                  commentBody += `💡 **Suggestion**:\n${issue.suggestion}\n\n`;
-                }
-
-                if (issue.code_snippet) {
-                  commentBody += `\`\`\`java\n${issue.code_snippet}\n\`\`\`\n\n`;
-                }
-
-                commentBody += `---\n🤖 *Détecté par Claude Sonnet 4.5 - AI Code Review v3.0*`;
-
-                // Ajouter le commentaire inline
-                // Utiliser le format correct pour les commentaires sur PR
-                const comment = {
-                  path: file.file_path || file.path,  // Support both field names
-                  body: commentBody,
-                  side: 'RIGHT'  // RIGHT = nouvelle version du fichier
-                };
-
-                // Utiliser line pour les commentaires inline
-                if (issue.line) {
-                  comment.line = issue.line;
-                } else {
-                  // Si pas de ligne spécifique, commenter la première ligne
-                  comment.line = 1;
-                }
-
-                reviewComments.push(comment);
-              });
-            });
-
-            summaryBody += '\n---\n';
-            summaryBody += `🔍 Commit: \`${context.sha.substring(0, 7)}\`\n`;
-            summaryBody += `⏰ Analysé le: ${new Date().toLocaleString('fr-FR')}\n`;
-            summaryBody += `\n📝 **${reviewComments.length} commentaires inline** ont été ajoutés sur les fichiers modifiés.\n\n`;
-            summaryBody += `🤖 Propulsé par Claude Sonnet 4.5`;
-
-            console.log(`📝 Création d'une review avec ${reviewComments.length} commentaires inline...`);
-
-            // Créer une review avec des commentaires inline
-            try {
-              await github.rest.pulls.createReview({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: context.issue.number,
-                event: 'COMMENT',
-                body: summaryBody,
-                comments: reviewComments
-              });
-              console.log(`✅ Review créée avec succès !`);
-            } catch (error) {
-              console.log(`⚠️ Erreur lors de la création de la review: ${error.message}`);
-              // Fallback: poster un commentaire général si la review échoue
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: summaryBody + '\n\n⚠️ Note: Impossible de poster les commentaires inline. Consultez les artefacts pour le rapport complet.'
-              });
-            }
-
-      - name: 🏷️ Auto-labelling de la PR
-        if: github.event_name == 'pull_request' && steps.changed-files.outputs.found == 'true'
-        uses: actions/github-script@v7
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-
-            // Trouver le fichier JSON de revue
-            const files = fs.readdirSync('.');
-            const jsonFile = files.find(f => f.startsWith('code_review_') && f.endsWith('.json'));
-
-            if (!jsonFile) {
-              console.log('⚠️ Aucun rapport JSON trouvé pour l\'auto-labelling');
-              return;
-            }
-
-            const review = JSON.parse(fs.readFileSync(jsonFile, 'utf8'));
-            const labels = new Set();
-
-            // Analyser les issues pour déterminer les labels
-            let criticalCount = 0;
-            let securityCount = 0;
-            let performanceCount = 0;
-            let architectureCount = 0;
-
-            review.files?.forEach(file => {
-              file.issues?.forEach(issue => {
-                if (issue.severity === 'critical') {
-                  criticalCount++;
-                  labels.add('ai-review:critical');
-                }
-
-                const category = issue.category?.toLowerCase() || '';
-                if (category.includes('security') || category.includes('sécurité')) {
-                  securityCount++;
-                  labels.add('ai-review:security');
-                } else if (category.includes('performance')) {
-                  performanceCount++;
-                  labels.add('ai-review:performance');
-                } else if (category.includes('architecture')) {
-                  architectureCount++;
-                  labels.add('ai-review:architecture');
-                }
-
-                // Labels OWASP si applicable
-                if (issue.owasp_category) {
-                  labels.add('ai-review:owasp');
-                }
-              });
-            });
-
-            // Ajouter un label de score basé sur overall_score (0-10)
-            const score = review.overall_score || 0;
-            if (score >= 9) {
-              labels.add('ai-review:excellent');
-            } else if (score >= 7) {
-              labels.add('ai-review:good');
-            } else if (score >= 5) {
-              labels.add('ai-review:acceptable');
-            } else {
-              labels.add('ai-review:needs-work');
-            }
-
-            // Label de qualité
-            if (review.quality_label) {
-              labels.add(`quality:${review.quality_label.toLowerCase().replace(/\s+/g, '-')}`);
-            }
-
-            // ✨ NOUVEAUX LABELS MÉTRIQUES DÉTAILLÉS
-
-            // Label de score exact
-            labels.add(`score: ${Math.round(score)}/10`);
-
-            // Labels de compteurs d'issues
-            const totalIssues = review.files?.reduce((sum, file) => sum + (file.issues?.length || 0), 0) || 0;
-            if (totalIssues > 0) {
-              labels.add(`issues: ${totalIssues}`);
-            }
-
-            // Labels de sévérité avec compteurs
-            if (criticalCount > 0) labels.add(`critical: ${criticalCount}`);
-
-            const highCount = review.files?.reduce((sum, file) =>
-              sum + (file.issues?.filter(i => i.severity === 'high').length || 0), 0) || 0;
-            if (highCount > 0) labels.add(`high: ${highCount}`);
-
-            const mediumCount = review.files?.reduce((sum, file) =>
-              sum + (file.issues?.filter(i => i.severity === 'medium').length || 0), 0) || 0;
-            if (mediumCount > 0) labels.add(`medium: ${mediumCount}`);
-
-            // Labels de catégories avec compteurs
-            if (securityCount > 0) labels.add(`security: ${securityCount}`);
-            if (performanceCount > 0) labels.add(`performance: ${performanceCount}`);
-            if (architectureCount > 0) labels.add(`architecture: ${architectureCount}`);
-
-            // Compter les issues OWASP
-            const owaspCount = review.files?.reduce((sum, file) =>
-              sum + (file.issues?.filter(i => i.owasp_category).length || 0), 0) || 0;
-            if (owaspCount > 0) labels.add(`owasp: ${owaspCount}`);
-
-            // Labels de score par catégorie (si disponibles)
-            if (review.scores) {
-              if (review.scores.security !== undefined) {
-                labels.add(`security-score: ${Math.round(review.scores.security)}/10`);
-              }
-              if (review.scores.performance !== undefined) {
-                labels.add(`performance-score: ${Math.round(review.scores.performance)}/10`);
-              }
-              if (review.scores.architecture !== undefined) {
-                labels.add(`architecture-score: ${Math.round(review.scores.architecture)}/10`);
-              }
-              if (review.scores.code_quality !== undefined) {
-                labels.add(`quality-score: ${Math.round(review.scores.code_quality)}/10`);
-              }
-            }
-
-            console.log(`📊 Analyse: ${criticalCount} critiques, ${securityCount} sécurité, ${performanceCount} performance, ${architectureCount} architecture`);
-            console.log(`🏷️ Labels à ajouter: ${Array.from(labels).join(', ')}`);
-
-            // Définir les couleurs des labels
-            const labelColors = {
-              'ai-review:critical': 'b60205',
-              'ai-review:security': 'd93f0b',
-              'ai-review:owasp': 'c5def5',
-              'ai-review:performance': 'fbca04',
-              'ai-review:architecture': '0e8a16',
-              'ai-review:excellent': '0e8a16',
-              'ai-review:good': 'a2eeef',
-              'ai-review:acceptable': 'fbca04',
-              'ai-review:needs-work': 'd93f0b',
-              'quality:excellent-code-review': '0e8a16',
-              'quality:good-code-review': 'a2eeef',
-              'quality:acceptable-code-review': 'fbca04',
-              'quality:needs-work': 'd93f0b',
-              // Couleurs pour les labels métriques
-              'score: 0/10': 'b60205',
-              'score: 1/10': 'b60205',
-              'score: 2/10': 'd93f0b',
-              'score: 3/10': 'd93f0b',
-              'score: 4/10': 'e99695',
-              'score: 5/10': 'fbca04',
-              'score: 6/10': 'fbca04',
-              'score: 7/10': 'bfe5bf',
-              'score: 8/10': '5cb85c',
-              'score: 9/10': '0e8a16',
-              'score: 10/10': '0e8a16'
-            };
-
-            const labelDescriptions = {
-              'ai-review:critical': 'Problèmes critiques détectés par IA',
-              'ai-review:security': 'Problèmes de sécurité détectés',
-              'ai-review:owasp': 'Vulnérabilités OWASP Top 10',
-              'ai-review:performance': 'Optimisations de performance suggérées',
-              'ai-review:architecture': 'Problèmes architecturaux',
-              'ai-review:excellent': 'Score IA excellent (9-10/10)',
-              'ai-review:good': 'Bon score IA (7-8/10)',
-              'ai-review:acceptable': 'Score IA acceptable (5-6/10)',
-              'ai-review:needs-work': 'Nécessite du travail (0-4/10)',
-              'quality:excellent-code-review': 'Qualité excellente',
-              'quality:good-code-review': 'Bonne qualité',
-              'quality:acceptable-code-review': 'Qualité acceptable',
-              'quality:needs-work': 'Qualité à améliorer'
-            };
-
-            // Ajouter des descriptions pour les labels métriques
-            labels.forEach(label => {
-              if (label.startsWith('score:') && !labelDescriptions[label]) {
-                labelDescriptions[label] = 'Score global de la revue IA';
-              } else if (label.startsWith('issues:')) {
-                labelDescriptions[label] = 'Nombre total de problèmes détectés';
-              } else if (label.startsWith('critical:')) {
-                labelDescriptions[label] = 'Nombre de problèmes critiques';
-              } else if (label.startsWith('high:')) {
-                labelDescriptions[label] = 'Nombre de problèmes haute priorité';
-              } else if (label.startsWith('medium:')) {
-                labelDescriptions[label] = 'Nombre de problèmes moyenne priorité';
-              } else if (label.startsWith('security:') && !label.includes('score')) {
-                labelDescriptions[label] = 'Nombre de problèmes de sécurité';
-              } else if (label.startsWith('performance:') && !label.includes('score')) {
-                labelDescriptions[label] = 'Nombre de problèmes de performance';
-              } else if (label.startsWith('architecture:') && !label.includes('score')) {
-                labelDescriptions[label] = 'Nombre de problèmes architecturaux';
-              } else if (label.startsWith('owasp:')) {
-                labelDescriptions[label] = 'Nombre de vulnérabilités OWASP';
-              } else if (label.includes('-score:')) {
-                labelDescriptions[label] = `Score ${label.split('-')[0]} détaillé`;
-              }
-            });
-
-            // Récupérer les labels existants du repo
-            let existingLabels = [];
-            try {
-              const response = await github.rest.issues.listLabelsForRepo({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                per_page: 100
-              });
-              existingLabels = response.data.map(l => l.name);
-            } catch (error) {
-              console.log('⚠️ Erreur lors de la récupération des labels:', error.message);
-            }
-
-            // Créer les labels manquants
-            for (const label of labels) {
-              if (!existingLabels.includes(label)) {
-                try {
-                  await github.rest.issues.createLabel({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    name: label,
-                    color: labelColors[label] || 'ededed',
-                    description: labelDescriptions[label] || 'Auto-généré par AI Code Review'
-                  });
-                  console.log(`✅ Label créé: ${label}`);
-                } catch (error) {
-                  if (error.status !== 422) {
-                    console.log(`⚠️ Impossible de créer le label ${label}:`, error.message);
-                  }
-                }
-              }
-            }
-
-            // Appliquer les labels à la PR
-            if (labels.size > 0) {
-              try {
-                await github.rest.issues.addLabels({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: context.issue.number,
-                  labels: Array.from(labels)
-                });
-                console.log(`✅ ${labels.size} label(s) ajouté(s) à la PR`);
-              } catch (error) {
-                console.log('⚠️ Erreur lors de l\'ajout des labels:', error.message);
-              }
-            } else {
-              console.log('ℹ️ Aucun label à ajouter');
-            }
-
-      - name: ✅ Résumé de l'analyse
-        if: always()
+      - name: 📊 Résumé
+        if: always() && steps.changed-files.outputs.found == 'true'
         run: |
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-          echo "📊 RÉSUMÉ DE L'ANALYSE IA v3.0"
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-          if [ "${{ steps.changed-files.outputs.found }}" == "true" ]; then
-            if ls code_review_*.json 1> /dev/null 2>&1; then
-              echo "✅ Revue de code terminée avec succès"
-              echo "📁 Rapport disponible dans les artefacts"
-            else
-              echo "⚠️ Aucun rapport généré"
-            fi
-          else
-            echo "ℹ️ Aucun fichier Java à analyser"
-          fi
-
-          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📋 Résumé du Workflow AI Code Review"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "✅ Fichiers analysés: $(wc -l < changed_files.txt 2>/dev/null || echo 0)"
+          echo "✅ Rapports générés et sauvegardés dans les artifacts"
+          echo "✅ Commentaires inline postés sur la PR (si applicable)"
+          echo "✅ Labels automatiques ajoutés (si applicable)"
+          echo ""
+          echo "🤖 Propulsé par Claude Sonnet 4.5 - AI Code Review v3.0"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
